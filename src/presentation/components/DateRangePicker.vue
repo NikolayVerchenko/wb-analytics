@@ -121,10 +121,32 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Calendar, ChevronDown } from 'lucide-vue-next'
-import { useFilterStore } from '../stores/filterStore'
+// TODO: Восстановить после реализации filterStore
+// import { useFilterStore } from '../stores/filterStore'
 import type { DateRange } from '@core/services/DateRangeService'
 
-const filterStore = useFilterStore()
+// TODO: Восстановить после реализации filterStore
+// const filterStore = useFilterStore()
+// Временная заглушка для filterStore
+const filterStore = {
+  currentDateRange: null as DateRange | null,
+  dateRangeService: {
+    getToday: () => new Date().toISOString().split('T')[0],
+    getMinDate: () => '2024-01-29',
+    getAvailableWeeks: () => [] as any[],
+    getLast30Days: () => ({ start: '', end: '', label: 'Последние 30 дней' }) as DateRange,
+    getLast90Days: () => ({ start: '', end: '', label: 'Последние 90 дней' }) as DateRange,
+    getCurrentYear: () => ({ start: '', end: '', label: 'Текущий год' }) as DateRange,
+    formatRange: (range: DateRange) => range.label || `${range.start} - ${range.end}`,
+    getWeekRange: () => null as DateRange | null,
+    validateRange: () => ({ valid: true, error: null }),
+    getCustomRange: (start: string, end: string) => ({ start, end, label: '' }) as DateRange,
+    isPreset: () => false,
+  },
+  setDateRange: (range: DateRange) => {
+    console.log('setDateRange called (stub):', range)
+  },
+}
 
 const isOpen = ref(false)
 const selectedWeek = ref('')

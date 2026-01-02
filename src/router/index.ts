@@ -5,12 +5,20 @@ import ReportSyncPanel from '../presentation/components/ReportSyncPanel.vue'
 import ProductsView from '../presentation/components/ProductsView.vue'
 import PurchaseOrdersView from '../presentation/components/PurchaseOrdersView.vue'
 import ShipmentsView from '../presentation/components/ShipmentsView.vue'
+import FinanceView from '../presentation/components/FinanceView.vue'
+import BatchManagementView from '../presentation/components/BatchManagementView.vue'
+import SyncView from '../views/SyncView.vue'
 
 const routes = [
   {
     path: '/',
     name: 'Dashboard',
     component: Dashboard,
+  },
+  {
+    path: '/sync',
+    name: 'Sync',
+    component: SyncView,
   },
   {
     path: '/summary',
@@ -33,9 +41,19 @@ const routes = [
     component: ShipmentsView,
   },
   {
+    path: '/finance',
+    name: 'Finance',
+    component: FinanceView,
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: ReportSyncPanel,
+  },
+  {
+    path: '/batches',
+    name: 'Batches',
+    component: BatchManagementView,
   },
 ]
 

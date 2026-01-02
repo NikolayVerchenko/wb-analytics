@@ -136,24 +136,37 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Filter, X, Search } from 'lucide-vue-next'
 import { container } from '@core/di/container'
-import { useFilterStore } from '../stores/filterStore'
+// TODO: Восстановить после реализации filterStore
+// import { useFilterStore } from '../stores/filterStore'
 import { VendorCodeService, type VendorCodeInfo } from '@core/services/VendorCodeService'
 
-const filterStore = useFilterStore()
+// TODO: Восстановить после реализации filterStore
+// const filterStore = useFilterStore()
+const filterStore = {
+  selectedVendorCodes: [] as string[] | undefined,
+  setSelectedVendorCodes: (codes: string[] | undefined) => {
+    console.log('setSelectedVendorCodes called (stub):', codes)
+  },
+}
+
 const isOpen = ref(false)
 const searchQuery = ref('')
 const vendorCodes = ref<VendorCodeInfo[]>([])
 const selectedVendorCodesLocal = ref<string[]>([])
 
+// TODO: Восстановить после реализации репозиториев в container
 // Использование репозиториев из контейнера
-const saleRepository = container.getReportSaleRepository()
-const returnRepository = container.getReportReturnRepository()
-const vendorCodeService = new VendorCodeService(saleRepository, returnRepository)
+// const saleRepository = container.getReportSaleRepository()
+// const returnRepository = container.getReportReturnRepository()
+// const vendorCodeService = new VendorCodeService(saleRepository, returnRepository)
+const vendorCodeService = null as any
 
 // Загружаем артикулы при монтировании компонента
 onMounted(async () => {
   try {
-    vendorCodes.value = await vendorCodeService.getUniqueVendorCodes()
+    // TODO: Восстановить после реализации vendorCodeService
+    // vendorCodes.value = await vendorCodeService.getUniqueVendorCodes()
+    vendorCodes.value = []
     // Инициализируем selectedVendorCodesLocal из store
     if (filterStore.selectedVendorCodes && filterStore.selectedVendorCodes.length > 0) {
       selectedVendorCodesLocal.value = [...filterStore.selectedVendorCodes]

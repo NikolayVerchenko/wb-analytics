@@ -1,6 +1,0 @@
-export { OrderRepository } from './OrderRepository'
-export { SaleRepository } from './SaleRepository'
-export { ExpenseRepository } from './ExpenseRepository'
-export { StorageRepository } from './StorageRepository'
-export { AcceptanceRepository } from './AcceptanceRepository'
-export { ProductRepository } from './ProductRepository'

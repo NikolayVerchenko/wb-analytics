@@ -51,10 +51,23 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { type LogEntry, type LogLevel } from '@application/services/LoggerService'
-import { container } from '@core/di/container'
+// TODO: Восстановить после реализации LoggerService
+// import { type LogEntry, type LogLevel, loggerService } from '@application/services/LoggerService'
 
-const loggerService = container.getLoggerService()
+// Заглушки типов
+type LogLevel = 'info' | 'warn' | 'error' | 'success'
+type LogEntry = {
+  id: string
+  level: LogLevel
+  message: string
+  timestamp: Date
+}
+
+// Заглушка loggerService
+const loggerService = {
+  getLogs: () => [] as LogEntry[],
+  clear: () => {},
+}
 
 interface Props {
   height?: number
@@ -188,20 +201,25 @@ watch(logs, () => {
 }, { deep: true })
 
 onMounted(() => {
+  // TODO: Восстановить после реализации LoggerService
   // Загружаем последние 50 логов
-  logs.value = loggerService.getLast(50)
+  // const allLogs = loggerService.getLogs()
+  // logs.value = allLogs.slice(-50).reverse()
+  logs.value = []
   scrollToBottom()
 
+  // TODO: Восстановить после добавления метода subscribe в LoggerService
   // Подписываемся на обновления логов
-  unsubscribe = loggerService.subscribe((newLogs) => {
-    logs.value = newLogs.slice(-50) // Берем последние 50
-  })
+  // unsubscribe = loggerService.subscribe((newLogs) => {
+  //   logs.value = newLogs.slice(-50) // Берем последние 50
+  // })
 })
 
 onBeforeUnmount(() => {
-  if (unsubscribe) {
-    unsubscribe()
-  }
+  // TODO: Восстановить после добавления метода subscribe в LoggerService
+  // if (unsubscribe) {
+  //   unsubscribe()
+  // }
 })
 </script>
 

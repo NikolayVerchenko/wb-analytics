@@ -117,24 +117,37 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Filter, X, Search } from 'lucide-vue-next'
 import { container } from '@core/di/container'
-import { useFilterStore } from '../stores/filterStore'
+// TODO: Восстановить после реализации filterStore
+// import { useFilterStore } from '../stores/filterStore'
 import { CategoryService } from '@core/services/CategoryService'
 
-const filterStore = useFilterStore()
+// TODO: Восстановить после реализации filterStore
+// const filterStore = useFilterStore()
+const filterStore = {
+  selectedCategories: [] as string[] | undefined,
+  setSelectedCategories: (categories: string[] | undefined) => {
+    console.log('setSelectedCategories called (stub):', categories)
+  },
+}
+
 const isOpen = ref(false)
 const searchQuery = ref('')
 const categories = ref<string[]>([])
 const selectedCategoriesLocal = ref<string[]>([])
 
+// TODO: Восстановить после реализации репозиториев в container
 // Использование репозиториев из контейнера
-const saleRepository = container.getReportSaleRepository()
-const returnRepository = container.getReportReturnRepository()
-const categoryService = new CategoryService(saleRepository, returnRepository)
+// const saleRepository = container.getReportSaleRepository()
+// const returnRepository = container.getReportReturnRepository()
+// const categoryService = new CategoryService(saleRepository, returnRepository)
+const categoryService = null as any
 
 // Загружаем категории при монтировании компонента
 onMounted(async () => {
   try {
-    categories.value = await categoryService.getUniqueCategories()
+    // TODO: Восстановить после реализации categoryService
+    // categories.value = await categoryService.getUniqueCategories()
+    categories.value = []
     // Инициализируем selectedCategoriesLocal из store
     if (filterStore.selectedCategories && filterStore.selectedCategories.length > 0) {
       selectedCategoriesLocal.value = [...filterStore.selectedCategories]

@@ -41,10 +41,16 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, FileText, Settings, Package, ShoppingCart, Truck } from 'lucide-vue-next'
-import { useWbStore } from '../stores/wbStore'
+import { LayoutDashboard, FileText, Settings, Package, ShoppingCart, Truck, TrendingUp, Layers } from 'lucide-vue-next'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
 
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  isSyncing: false,
+  isBackgroundSyncing: false,
+}
 
 const route = useRoute()
 
@@ -60,6 +66,8 @@ const menuItems: MenuItem[] = [
   { path: '/products', label: 'Товары', icon: Package },
   { path: '/purchases', label: 'Закупки', icon: ShoppingCart },
   { path: '/shipments', label: 'Поставки', icon: Truck },
+  { path: '/batches', label: 'Партии', icon: Layers },
+  { path: '/finance', label: 'Финансы', icon: TrendingUp },
   { path: '/settings', label: 'Настройки', icon: Settings },
 ]
 </script>

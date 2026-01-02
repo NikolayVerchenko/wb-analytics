@@ -80,12 +80,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Clock, CheckCircle2 } from 'lucide-vue-next'
-import { useWbStore } from '../stores/wbStore'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
 import { container } from '@core/di/container'
 import { db } from '@infrastructure/db/database'
 import type { SyncRegistryEntry } from '@core/domain/entities/SyncRegistryEntry'
 
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  isSyncing: false,
+  isBackgroundSyncing: false,
+  backgroundCurrentWeek: undefined as string | undefined,
+  syncProgress: null as { currentWeekIndex: number; totalWeeks: number } | null,
+}
 
 const waitingTask = ref<SyncRegistryEntry | null>(null)
 const countdownSeconds = ref<number>(0)
@@ -98,10 +106,13 @@ const backgroundCurrentWeek = ref<string | undefined>(undefined)
 
 const updateBackgroundStats = async () => {
   try {
-    const coordinator = container.getSyncCoordinator()
-    const stats = await coordinator.getBackgroundSyncStats()
-    backgroundRemainingWeeks.value = stats.remaining
-    backgroundCurrentWeek.value = stats.currentWeek
+    // TODO: Восстановить после реализации SyncCoordinator
+    // const coordinator = container.getSyncCoordinator()
+    // const stats = await coordinator.getBackgroundSyncStats()
+    // backgroundRemainingWeeks.value = stats.remaining
+    // backgroundCurrentWeek.value = stats.currentWeek
+    backgroundRemainingWeeks.value = 0
+    backgroundCurrentWeek.value = undefined
   } catch (error) {
     console.error('Ошибка при обновлении статистики background синхронизации в статус-баре:', error)
   }

@@ -1,4 +1,4 @@
-export type SyncType = 'daily' | 'weekly'
+export type SyncType = 'daily' | 'weekly' | 'ad_expenses'
 export type SyncStatus = 'pending' | 'waiting' | 'success' | 'failed'
 
 export interface SyncRegistryEntry {

@@ -6,4 +6,5 @@ export interface Expense {
   name: string
   nmId?: number
   category?: string
+  advertId?: number // ID рекламной кампании (если это рекламная затрата)
 }

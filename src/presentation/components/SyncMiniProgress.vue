@@ -35,18 +35,26 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { container } from '@core/di/container'
-import { useWbStore } from '../stores/wbStore'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
 
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  isBackgroundSyncing: false,
+  backgroundCurrentWeek: undefined as string | undefined,
+}
 
 const backgroundStats = ref<{ remaining: number; currentWeek?: string }>({ remaining: 0 })
 let statsInterval: number | null = null
 
 const updateBackgroundStats = async () => {
   try {
-    const coordinator = container.getSyncCoordinator()
-    const stats = await coordinator.getBackgroundSyncStats()
-    backgroundStats.value = stats
+    // TODO: Восстановить после реализации SyncCoordinator
+    // const coordinator = container.getSyncCoordinator()
+    // const stats = await coordinator.getBackgroundSyncStats()
+    // backgroundStats.value = stats
+    backgroundStats.value = { remaining: 0 }
   } catch (error) {
     console.error('Ошибка при обновлении статистики background синхронизации:', error)
   }

@@ -55,6 +55,21 @@
             <th class="border-b border-r border-gray-200 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                 Логистика
             </th>
+            <th 
+              class="border-b border-r border-gray-200 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+              title="Себестоимость одной единицы проданного товара (средневзвешенная)"
+            >
+                Себестоимость ед.
+            </th>
+            <th 
+              class="border-b border-r border-gray-200 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+              title="Рассчитано на основе привязанных поставок"
+            >
+                Себестоимость
+            </th>
+            <th class="border-b border-r border-gray-200 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                Валовая прибыль
+            </th>
         </tr>
       </thead>
       
@@ -125,6 +140,41 @@
           </td>
           <td class="px-4 py-3 text-sm text-right text-gray-900 whitespace-nowrap">
             {{ formatCurrency(total.logistics) }}
+          </td>
+          <td 
+            class="px-4 py-3 text-sm text-right font-semibold whitespace-nowrap"
+            :class="total.unitCost && total.unitCost > 0 ? 'text-orange-600' : 'text-gray-400'"
+            :title="total.unitCost && total.unitCost > 0 ? 'Себестоимость одной единицы (средневзвешенная)' : 'Нет данных о закупке для этой партии'"
+          >
+            <span v-if="total.unitCost !== undefined && total.unitCost > 0" class="inline-flex items-center gap-1">
+              {{ formatCurrency(total.unitCost) }}
+            </span>
+            <span v-else class="text-gray-400 inline-flex items-center gap-1">
+              0.00 ₽
+              <svg class="w-4 h-4 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Нет данных о закупке для этой партии">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+          </td>
+          <td 
+            class="px-4 py-3 text-sm text-right font-semibold whitespace-nowrap"
+            :class="total.totalCost && total.totalCost > 0 ? 'text-orange-600' : 'text-gray-400'"
+            :title="total.totalCost && total.totalCost > 0 ? 'Рассчитано на основе привязанных поставок' : 'Себестоимость не определена'"
+          >
+            <span v-if="total.totalCost !== undefined && total.totalCost > 0">
+              {{ formatCurrency(total.totalCost) }}
+            </span>
+            <span v-else class="text-red-600">⚠️ 0</span>
+          </td>
+          <td 
+            class="px-4 py-3 text-sm text-right font-bold whitespace-nowrap"
+            :class="
+              total.grossProfit !== undefined && total.grossProfit > 0 ? 'text-green-600' : 
+              total.grossProfit !== undefined && total.grossProfit < 0 ? 'text-red-600' : 
+              'text-gray-400'
+            "
+          >
+            {{ total.grossProfit !== undefined ? formatCurrency(total.grossProfit) : '—' }}
           </td>
         </tr>
 
@@ -218,6 +268,53 @@
             <td class="px-4 py-3 text-sm text-right text-gray-900 whitespace-nowrap">
               {{ formatCurrency(row.logistics) }}
             </td>
+            <td 
+              class="px-4 py-3 text-sm text-right font-semibold whitespace-nowrap"
+              :class="
+                row.unitCost !== undefined && row.unitCost > 0 ? 'text-orange-600' : 
+                'text-gray-400'
+              "
+              :title="row.unitCost && row.unitCost > 0 ? 'Себестоимость одной единицы (средневзвешенная)' : 'Нет данных о закупке для этой партии'"
+            >
+              <span v-if="row.unitCost !== undefined && row.unitCost > 0" class="inline-flex items-center gap-1">
+                {{ formatCurrency(row.unitCost) }}
+              </span>
+              <span v-else class="text-gray-400 inline-flex items-center gap-1">
+                0.00 ₽
+                <svg class="w-4 h-4 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Нет данных о закупке для этой партии">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+            </td>
+            <td 
+              class="px-4 py-3 text-sm text-right font-semibold whitespace-nowrap"
+              :class="
+                row.totalCost !== undefined && row.totalCost > 0 ? 'text-orange-600' : 
+                'text-gray-400'
+              "
+              :title="row.costWarning || (row.totalCost && row.totalCost > 0 ? 'Рассчитано на основе привязанных поставок' : 'Себестоимость не определена')"
+            >
+              <span v-if="row.costWarning || row.hasPartialCoverage" class="text-red-600 inline-flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </span>
+              <span v-if="row.totalCost !== undefined && row.totalCost > 0">
+                {{ formatCurrency(row.totalCost) }}
+              </span>
+              <span v-else-if="row.costWarning || row.hasPartialCoverage" class="text-red-600">0</span>
+              <span v-else>—</span>
+            </td>
+            <td 
+              class="px-4 py-3 text-sm text-right font-bold whitespace-nowrap"
+              :class="
+                row.grossProfit !== undefined && row.grossProfit > 0 ? 'text-green-600' : 
+                row.grossProfit !== undefined && row.grossProfit < 0 ? 'text-red-600' : 
+                'text-gray-400'
+              "
+            >
+              {{ row.grossProfit !== undefined ? formatCurrency(row.grossProfit) : '—' }}
+            </td>
           </tr>
 
           <!-- Дочерние строки (размеры) -->
@@ -301,6 +398,45 @@
             </td>
             <td class="px-4 py-2 text-sm text-right text-gray-900 whitespace-nowrap">
               {{ formatCurrency(child.logistics) }}
+            </td>
+            <td 
+              class="px-4 py-2 text-sm text-right font-semibold whitespace-nowrap"
+              :class="
+                child.unitCost !== undefined && child.unitCost > 0 ? 'text-orange-600' : 
+                'text-gray-400'
+              "
+              :title="child.unitCost && child.unitCost > 0 ? 'Себестоимость одной единицы' : 'Нет данных о закупке для этой партии'"
+            >
+              <span v-if="child.unitCost !== undefined && child.unitCost > 0" class="inline-flex items-center gap-1">
+                {{ formatCurrency(child.unitCost) }}
+              </span>
+              <span v-else class="text-gray-400 inline-flex items-center gap-1">
+                0.00 ₽
+                <svg class="w-4 h-4 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Нет данных о закупке для этой партии">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+            </td>
+            <td 
+              class="px-4 py-2 text-sm text-right font-semibold whitespace-nowrap"
+              :class="
+                child.totalCost !== undefined && child.totalCost > 0 ? 'text-orange-600' : 
+                'text-gray-400'
+              "
+              :title="child.costWarning || (child.totalCost && child.totalCost > 0 ? 'Рассчитано на основе привязанных поставок' : 'Себестоимость не определена')"
+            >
+              <span v-if="child.costWarning" class="text-red-600">⚠️</span>
+              {{ child.totalCost !== undefined && child.totalCost > 0 ? formatCurrency(child.totalCost) : (child.costWarning ? '0' : '—') }}
+            </td>
+            <td 
+              class="px-4 py-2 text-sm text-right font-bold whitespace-nowrap"
+              :class="
+                child.grossProfit !== undefined && child.grossProfit > 0 ? 'text-green-600' : 
+                child.grossProfit !== undefined && child.grossProfit < 0 ? 'text-red-600' : 
+                'text-gray-400'
+              "
+            >
+              {{ child.grossProfit !== undefined ? formatCurrency(child.grossProfit) : '—' }}
             </td>
           </tr>
         </template>

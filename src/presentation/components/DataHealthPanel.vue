@@ -129,12 +129,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Activity, Loader2, CheckCircle2 } from 'lucide-vue-next'
-import { useWbStore } from '../stores/wbStore'
-import { type LogEntry } from '@application/services/LoggerService'
-import { container } from '@core/di/container'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
+// import { type LogEntry, loggerService } from '@application/services/LoggerService'
 
-const loggerService = container.getLoggerService()
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  firstLoadedDate: null as Date | null,
+  lastLoadedDate: null as Date | null,
+  totalProgressPercentage: 0,
+  backgroundCurrentWeek: null as string | null,
+  backgroundRemainingWeeks: 0,
+  isSyncing: false,
+  isBackgroundSyncing: false,
+}
 
 const MIN_DATE = new Date('2024-01-29T00:00:00Z')
 const today = new Date()
@@ -148,8 +157,9 @@ const backgroundTotalWeeks = computed(() => store.backgroundTotalWeeks || 0)
 let updateInterval: number | null = null
 
 const updateHealthData = async () => {
+  // TODO: Восстановить после реализации метода в store
   // Обновляем данные в store (они будут доступны через computed свойства)
-  await store.updateDetailedProgress()
+  // await store.updateDetailedProgress()
 }
 
 const isSyncing = computed(() => store.isSyncing)
@@ -215,12 +225,14 @@ const formatEventTime = (date: Date): string => {
 }
 
 const updateRecentEvents = () => {
+  // TODO: Восстановить после реализации LoggerService
   // Получаем последние 5 событий из лога
-  const allLogs = loggerService.getAll()
-  recentEvents.value = allLogs
-    .filter(log => log.level === 'success' || log.message.includes('финал') || log.message.includes('замен'))
-    .slice(-5)
-    .reverse()
+  // const allLogs = loggerService.getLogs()
+  // recentEvents.value = allLogs
+  //   .filter(log => log.level === 'success' || log.message.includes('финал') || log.message.includes('замен'))
+  //   .slice(-5)
+  //   .reverse()
+  recentEvents.value = []
 }
 
 const updateWeekPosition = async () => {
@@ -255,10 +267,11 @@ onMounted(() => {
   updateWeekPosition()
   updateRecentEvents()
   
+  // TODO: Восстановить после добавления метода subscribe в LoggerService
   // Подписываемся на изменения логов
-  loggerService.subscribe(() => {
-    updateRecentEvents()
-  })
+  // loggerService.subscribe(() => {
+  //   updateRecentEvents()
+  // })
   
   // Обновляем данные каждые 5 секунд
   updateInterval = window.setInterval(() => {

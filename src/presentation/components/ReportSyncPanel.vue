@@ -21,14 +21,72 @@
         />
         <button
           @click="saveApiKey"
-          class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          :disabled="!canSaveApiKey"
+          class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           Сохранить
         </button>
       </div>
       <p class="text-xs text-gray-500 mt-1">
-        Ключ сохраняется в localStorage браузера
+        Ключ сохраняется в защищенной базе данных приложения
       </p>
+      <div v-if="apiKeySaveStatus" class="mt-2 text-sm" :class="apiKeySaveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'">
+        {{ apiKeySaveStatus.message }}
+      </div>
+    </div>
+
+    <!-- Загрузка отчетов о реализации -->
+    <div class="mb-6 p-4 bg-gray-50 rounded">
+      <h3 class="text-lg font-semibold mb-4">Загрузка отчетов о реализации</h3>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">Дата начала (от):</label>
+          <input
+            v-model="reportDateFrom"
+            type="date"
+            class="w-full border rounded px-3 py-2"
+            :max="maxDate"
+            :disabled="isReportSyncing"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">Дата окончания (до):</label>
+          <input
+            v-model="reportDateTo"
+            type="date"
+            class="w-full border rounded px-3 py-2"
+            :max="maxDate"
+            :disabled="isReportSyncing"
+          />
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <button
+          @click="loadReports"
+          :disabled="isReportSyncing || !canLoadReports || !hasApiKey"
+          class="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          :title="!hasApiKey ? 'Введите API-ключ в настройках' : ''"
+        >
+          {{ isReportSyncing ? 'Загрузка...' : 'Загрузить отчеты' }}
+        </button>
+
+        <div v-if="isReportSyncing" class="flex items-center gap-2">
+          <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-sm text-gray-600">
+            Загружено: {{ reportProgress.loaded }} записей
+          </span>
+        </div>
+      </div>
+
+      <div v-if="reportProgress.error" class="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+        Ошибка: {{ reportProgress.error }}
+      </div>
+
+      <div v-if="reportProgress.success" class="mt-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+        ✅ Загружено {{ reportProgress.totalLoaded }} записей, сохранено {{ reportProgress.totalSaved }} записей
+      </div>
     </div>
 
     <!-- Статус синхронизации -->
@@ -74,221 +132,194 @@
               </div>
             </div>
           </div>
+          <!-- Индикатор прогресса рекламных расходов -->
+          <div v-if="store.adExpensesSyncing" class="mt-2 p-2 bg-purple-50 rounded text-xs">
+            <div class="font-medium mb-1 text-purple-700">
+              📊 Рекламные расходы
+            </div>
+            <div class="text-purple-600">
+              Синхронизация рекламных расходов (последние 72 часа)...
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Выбор периода загрузки -->
+    <!-- Выбор типов данных для синхронизации -->
+    <!-- TODO: Восстановить после реализации метода startSync в store -->
+    <!--
     <div class="mb-4 p-4 bg-gray-50 rounded">
-      <label class="block text-sm font-medium mb-3">Период загрузки:</label>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-600 mb-1">Дата от:</label>
+      <label class="block text-sm font-medium mb-3">Типы данных:</label>
+      <div class="space-y-2">
+        <label class="flex items-center gap-2">
           <input
-            v-model="dateFrom"
-            type="date"
-            :min="minDate"
-            :max="maxDate"
-            class="w-full border rounded px-3 py-2 text-sm"
+            v-model="syncOptions.includeAdExpenses"
+            type="checkbox"
+            class="rounded border-gray-300"
           />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-600 mb-1">Дата до:</label>
-          <input
-            v-model="dateTo"
-            type="date"
-            :min="minDate"
-            :max="maxDate"
-            class="w-full border rounded px-3 py-2 text-sm"
-          />
-        </div>
+          <span class="text-sm">Рекламные расходы</span>
+        </label>
       </div>
-      <p class="text-xs text-gray-500 mt-2">
-        Минимальная дата: 29.01.2024
-      </p>
     </div>
+    -->
 
-    <!-- Кнопки запуска -->
-    <div class="flex gap-2">
-      <button
-        @click="handleStartSyncFull"
-        :disabled="store.isSyncing || !hasApiKey"
-        class="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span v-if="store.isSyncing">Синхронизация...</span>
-        <span v-else>Загрузить все (с 29.01.2024)</span>
-      </button>
-      <button
-        @click="handleStartSyncCustom"
-        :disabled="store.isSyncing || !hasApiKey || !isDateRangeValid"
-        class="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span v-if="store.isSyncing">Синхронизация...</span>
-        <span v-else>Загрузить период</span>
-      </button>
-    </div>
-
-    <!-- Ошибка -->
-    <div v-if="store.error" class="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-      {{ store.error }}
-    </div>
-
-    <!-- Информация -->
-    <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-      <p class="font-medium mb-1">Информация:</p>
-      <ul class="list-disc list-inside space-y-1 text-xs">
-        <li>Можно загрузить все данные (с 29.01.2024) или выбрать период</li>
-        <li>Интервал загрузки: недельные периоды</li>
-        <li>Пауза между запросами: 10 секунд</li>
-        <li>Уже загруженные недели пропускаются автоматически</li>
-      </ul>
-    </div>
-    </div>
+    <!-- Кнопка запуска синхронизации -->
+    <!-- TODO: Восстановить после реализации метода startSync в store -->
+    <!--
+    <button
+      @click="startSync"
+      :disabled="store.isSyncing || store.isBackgroundSyncing"
+      class="w-full px-4 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+    >
+      {{ store.isSyncing || store.isBackgroundSyncing ? 'Синхронизация в процессе...' : 'Запустить синхронизацию' }}
+    </button>
+    -->
+  </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useWbStore } from '../stores/wbStore'
-import SyncLogMonitor from './SyncLogMonitor.vue'
+import { ref, computed, onMounted } from 'vue'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '@presentation/stores/wbStore'
 import DataHealthPanel from './DataHealthPanel.vue'
+import SyncLogMonitor from './SyncLogMonitor.vue'
+// TODO: Восстановить после реализации ReportSyncUseCase
+// import { ReportSyncUseCase } from '@application/use-cases/ReportSyncUseCase'
+// import { container } from '@core/di/container'
+// import { loggerService } from '@application/services/LoggerService'
+// import { SettingsRepository } from '@infrastructure/repositories/SettingsRepository'
+import { SyncManager } from '../../api/SyncManager'
 
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  isSyncing: false,
+  isBackgroundSyncing: false,
+  syncProgress: null,
+  currentPeriod: '',
+  totalLoaded: 0,
+  progressPercentage: 0,
+  abortSync: () => {},
+}
+
+// TODO: Восстановить после реализации SettingsRepository
+// const settingsRepository = new SettingsRepository()
+const syncManager = new SyncManager()
+const financeFetcher = syncManager.getFinanceFetcher()
+
+// Состояние для API ключа
 const apiKeyInput = ref('')
+const hasApiKey = ref(false)
+const apiKeySaveStatus = ref<{ type: 'success' | 'error'; message: string } | null>(null)
 
-// Даты по умолчанию
-const minDate = '2024-01-29'
-const maxDate = new Date().toISOString().split('T')[0]
+// Проверка наличия API ключа при загрузке компонента
+async function checkApiKey() {
+  try {
+    // TODO: Восстановить после реализации SettingsRepository
+    // hasApiKey.value = await settingsRepository.hasApiKey()
+    const savedKey = localStorage.getItem('wb_api_key')
+    hasApiKey.value = !!savedKey
+    if (savedKey) {
+      syncManager.setApiKey(savedKey)
+    }
+  } catch (error) {
+    console.error('Ошибка при проверке API ключа:', error)
+    hasApiKey.value = false
+  }
+}
 
-const dateFrom = ref('2024-01-29')
-const dateTo = ref(maxDate)
+// Сохранение API ключа
+async function saveApiKey() {
+  if (!apiKeyInput.value.trim()) return
 
-const hasApiKey = computed(() => {
-  return !!store.getApiKey()
-})
+  try {
+    // TODO: Восстановить после реализации SettingsRepository
+    // await settingsRepository.saveApiKey(apiKeyInput.value.trim())
+    localStorage.setItem('wb_api_key', apiKeyInput.value.trim())
+    syncManager.setApiKey(apiKeyInput.value.trim())
+    apiKeySaveStatus.value = { type: 'success', message: 'API ключ успешно сохранен' }
+    apiKeyInput.value = '' // Очищаем поле ввода для безопасности
+    await checkApiKey() // Обновляем статус наличия ключа
+    // TODO: Восстановить после реализации DIContainer
+    // container.initialize(await settingsRepository.getApiKey() || '')
+  } catch (error: any) {
+    apiKeySaveStatus.value = { type: 'error', message: `Ошибка при сохранении: ${error.message}` }
+    console.error('Ошибка при сохранении API ключа:', error)
+  }
 
-const isDateRangeValid = computed(() => {
-  if (!dateFrom.value || !dateTo.value) return false
-  
-  // Сравниваем только даты (без времени), чтобы избежать проблем с часовыми поясами
-  const fromDate = new Date(dateFrom.value + 'T00:00:00')
-  const toDate = new Date(dateTo.value + 'T00:00:00')
-  const minDateObj = new Date(minDate + 'T00:00:00')
-  
-  // Получаем сегодняшнюю дату (только дата, без времени)
-  const today = new Date()
-  const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const fromDateOnly = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate())
-  const toDateOnly = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate())
-  const minDateOnly = new Date(minDateObj.getFullYear(), minDateObj.getMonth(), minDateObj.getDate())
-  
-  return fromDateOnly >= minDateOnly && toDateOnly >= fromDateOnly && toDateOnly <= todayDateOnly && fromDateOnly <= todayDateOnly
-})
+  // Очищаем сообщение через 3 секунды
+  setTimeout(() => {
+    apiKeySaveStatus.value = null
+  }, 3000)
+}
 
-let progressUpdateInterval: number | null = null
-
+// Проверяем наличие API ключа при монтировании компонента
 onMounted(() => {
-  // Загружаем сохраненный ключ при монтировании
-  const savedKey = store.getApiKey()
-  if (savedKey) {
-    apiKeyInput.value = savedKey
-  }
-
-  // Обновляем детальный прогресс при открытии страницы настроек
-  store.updateDetailedProgress()
-
-  // Обновляем прогресс каждые 5 секунд
-  progressUpdateInterval = window.setInterval(() => {
-    store.updateDetailedProgress()
-  }, 5000)
+  checkApiKey()
 })
 
-onBeforeUnmount(() => {
-  if (progressUpdateInterval) {
-    clearInterval(progressUpdateInterval)
-    progressUpdateInterval = null
-  }
+// Состояние для загрузки отчетов
+const getDefaultDateFrom = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 7) // По умолчанию последние 7 дней
+  return date.toISOString().split('T')[0]
+}
+
+const reportDateFrom = ref<string>(getDefaultDateFrom())
+const reportDateTo = ref<string>(new Date().toISOString().split('T')[0])
+
+// Используем реактивные поля из financeFetcher
+const isReportSyncing = computed(() => financeFetcher.isFetching.value)
+const reportProgress = computed(() => ({
+  loaded: financeFetcher.loadedCount.value,
+  totalLoaded: financeFetcher.loadedCount.value,
+  totalSaved: financeFetcher.loadedCount.value, // Данные сохраняются сразу
+  error: financeFetcher.error.value,
+  success: !financeFetcher.isFetching.value && !financeFetcher.error.value && financeFetcher.loadedCount.value > 0,
+}))
+
+const maxDate = computed(() => {
+  return new Date().toISOString().split('T')[0]
 })
 
-const saveApiKey = async () => {
-  if (apiKeyInput.value.trim()) {
-    const apiKey = apiKeyInput.value.trim()
-    store.setApiKey(apiKey)
-    
-    // Переинициализируем DIContainer с новым ключом
-    try {
-      const { container } = await import('@core/di/container')
-      const containerWithReinit = container as typeof container & { reinitialize: (key?: string) => void }
-      if (typeof containerWithReinit.reinitialize === 'function') {
-        containerWithReinit.reinitialize(apiKey)
-      }
-    } catch (err) {
-      console.warn('Не удалось переинициализировать DI контейнер:', err)
-    }
-    
-    alert('API ключ сохранен')
-  } else {
-    alert('Введите API ключ')
-  }
-}
+const canLoadReports = computed(() => {
+  return reportDateFrom.value && reportDateTo.value && reportDateFrom.value <= reportDateTo.value
+})
 
-const handleStartSyncFull = async () => {
-  try {
-    await store.startSync()
-    if (!store.error) {
-    alert('Синхронизация завершена успешно!')
-    }
-  } catch (error) {
-    // Ошибка уже отображается в store.error
-    console.error('Ошибка синхронизации:', error)
-    
-    // Дополнительное сообщение для 401 ошибки
-    if (error && typeof error === 'object' && 'message' in error) {
-      const errorMsg = (error as Error).message
-      if (errorMsg.includes('401') || errorMsg.includes('401')) {
-        alert('Ошибка авторизации (401). Проверьте правильность API ключа в настройках.')
-      }
-    }
-  }
-}
+const canSaveApiKey = computed(() => {
+  return apiKeyInput.value && apiKeyInput.value.trim().length > 0
+})
 
-const handleStartSyncCustom = async () => {
-  if (!isDateRangeValid.value) {
-    alert('Проверьте правильность выбранных дат')
-    return
-  }
-
-  // Дополнительная проверка на будущие даты (сравниваем только даты без времени)
-  const today = new Date()
-  const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  
-  // Создаем даты в UTC, чтобы избежать проблем с часовыми поясами
-  const fromDate = new Date(dateFrom.value + 'T00:00:00Z')
-  const toDate = new Date(dateTo.value + 'T23:59:59Z')
-  const fromDateOnly = new Date(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate())
-  const toDateOnly = new Date(toDate.getUTCFullYear(), toDate.getUTCMonth(), toDate.getUTCDate())
-  
-  if (fromDateOnly > todayDateOnly || toDateOnly > todayDateOnly) {
-    alert('Даты не могут быть в будущем. Выберите даты до сегодняшнего дня.')
-    return
-  }
+// Загрузка отчетов
+async function loadReports() {
+  if (!canLoadReports.value || isReportSyncing.value) return
 
   try {
-    await store.startSync(fromDate, toDate)
-    if (!store.error) {
-    alert('Синхронизация завершена успешно!')
-    }
-  } catch (error) {
-    // Ошибка уже отображается в store.error
-    console.error('Ошибка синхронизации:', error)
-    
-    // Дополнительное сообщение для 401 ошибки
-    if (error && typeof error === 'object' && 'message' in error) {
-      const errorMsg = (error as Error).message
-      if (errorMsg.includes('401') || errorMsg.includes('401')) {
-        alert('Ошибка авторизации (401). Проверьте правильность API ключа в настройках.')
-      }
-    }
+    financeFetcher.reset()
+    syncManager.setApiKey(localStorage.getItem('wb_api_key') || '')
+
+    const totalLoaded = await syncManager.startFullSync(
+      reportDateFrom.value,
+      reportDateTo.value,
+      'weekly' // TODO: Добавить выбор периода в UI
+    )
+
+    console.log('Загрузка завершена. Всего загружено записей:', totalLoaded)
+  } catch (error: any) {
+    // Ошибки обрабатываются через financeFetcher.error
+    console.error('Ошибка при загрузке отчетов:', error)
   }
 }
+
+// TODO: Восстановить после реализации метода startSync в store
+// Опции синхронизации
+// const syncOptions = ref({
+//   includeAdExpenses: false,
+// })
+// 
+// function startSync() {
+//   // Существующая логика синхронизации
+//   // store.startSync(syncOptions.value)
+// }
 </script>

@@ -169,29 +169,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
-import { RefreshCw, AlertCircle, TrendingUp, TrendingDown, Truck, Wallet } from 'lucide-vue-next'
+import { RefreshCw, AlertCircle } from 'lucide-vue-next'
 import { useWeeklyAnalytics } from '../composables/useWeeklyAnalytics'
-import { useWbStore } from '../stores/wbStore'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
 import { SyncButton, PnLDisplay } from './index'
 import BarChart from './BarChart.vue'
 import MetricCard from './MetricCard.vue'
 
 const { fetch, data, isLoading } = useWeeklyAnalytics()
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+// const store = {
+//   isSyncing: false,
+//   isBackgroundSyncing: false,
+// }
 const route = useRoute()
 const isDashboardRoute = computed(() => route.path === '/' || route.name === 'Dashboard')
 
-let backgroundRefreshInterval: number | null = null
+// TODO: Восстановить после реализации wbStore
+// let backgroundRefreshInterval: number | null = null
 
 const chartData = computed(() => {
   if (!data.value) return { labels: [], sales: [], returns: [] }
   
   return {
-    labels: data.value.weeks.map(w => w.period),
-    sales: data.value.weeks.map(w => w.totalSales),
-    returns: data.value.weeks.map(w => w.totalReturns),
+    labels: data.value.weeks.map((w: any) => w.period),
+    sales: data.value.weeks.map((w: any) => w.totalSales),
+    returns: data.value.weeks.map((w: any) => w.totalReturns),
   }
 })
 
@@ -208,44 +215,47 @@ const refresh = async () => {
   await fetch()
 }
 
+// TODO: Восстановить после реализации wbStore
 // Автоматически обновляем данные после завершения синхронизации
-watch(() => store.isSyncing, (isSyncing, wasSyncing) => {
-  // Когда foreground синхронизация завершается (переходит из true в false)
-  if (wasSyncing && !isSyncing) {
-    console.log('Foreground синхронизация завершена, обновляю данные дашборда...')
-    fetch()
-  }
-})
+// watch(() => store.isSyncing, (isSyncing, wasSyncing) => {
+//   // Когда foreground синхронизация завершается (переходит из true в false)
+//   if (wasSyncing && !isSyncing) {
+//     console.log('Foreground синхронизация завершена, обновляю данные дашборда...')
+//     fetch()
+//   }
+// })
 
+// TODO: Восстановить после реализации wbStore
 // Реактивное обновление данных при загрузке background синхронизации
 // Обновляем каждые 10 секунд, если идет background синхронизация
-watch(() => store.isBackgroundSyncing, (isRunning) => {
-  if (isRunning) {
-    // Запускаем периодическое обновление данных каждые 10 секунд
-    backgroundRefreshInterval = window.setInterval(() => {
-      console.log('Обновление данных дашборда (background синхронизация активна)...')
-      fetch()
-    }, 10000)
-  } else {
-    // Останавливаем обновление когда background синхронизация завершена
-    if (backgroundRefreshInterval) {
-      clearInterval(backgroundRefreshInterval)
-      backgroundRefreshInterval = null
-      // Финальное обновление при завершении
-      fetch()
-    }
-  }
-})
+// watch(() => store.isBackgroundSyncing, (isRunning) => {
+//   if (isRunning) {
+//     // Запускаем периодическое обновление данных каждые 10 секунд
+//     backgroundRefreshInterval = window.setInterval(() => {
+//       console.log('Обновление данных дашборда (background синхронизация активна)...')
+//       fetch()
+//     }, 10000)
+//   } else {
+//     // Останавливаем обновление когда background синхронизация завершена
+//     if (backgroundRefreshInterval) {
+//       clearInterval(backgroundRefreshInterval)
+//       backgroundRefreshInterval = null
+//       // Финальное обновление при завершении
+//       fetch()
+//     }
+//   }
+// })
 
 onMounted(() => {
   fetch()
 })
 
 onBeforeUnmount(() => {
+  // TODO: Восстановить после реализации wbStore
   // Очищаем интервал при размонтировании компонента
-  if (backgroundRefreshInterval) {
-    clearInterval(backgroundRefreshInterval)
-    backgroundRefreshInterval = null
-  }
+  // if (backgroundRefreshInterval) {
+  //   clearInterval(backgroundRefreshInterval)
+  //   backgroundRefreshInterval = null
+  // }
 })
 </script>

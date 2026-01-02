@@ -103,7 +103,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { container } from '@core/di/container'
-import { useWbStore } from '../stores/wbStore'
+// TODO: Восстановить после реализации wbStore
+// import { useWbStore } from '../stores/wbStore'
 
 interface Props {
   show: boolean
@@ -116,7 +117,11 @@ const emit = defineEmits<{
   skipToLastWeeks: []
 }>()
 
-const store = useWbStore()
+// TODO: Восстановить после реализации wbStore
+// const store = useWbStore()
+const store = {
+  isSyncing: false,
+}
 const stats = ref({ total: 0, pending: 0, success: 0, waiting: 0, failed: 0 })
 const statusMessage = ref('Инициализация...')
 const minDate = '29.01.2024'
@@ -132,21 +137,23 @@ const progressPercentage = computed(() => {
 
 const updateStats = async () => {
   try {
-    const coordinator = container.getSyncCoordinator()
-    const newStats = await coordinator.getSyncStats()
-    stats.value = newStats
+    // TODO: Восстановить после реализации SyncCoordinator
+    // const coordinator = container.getSyncCoordinator()
+    // const newStats = await coordinator.getSyncStats()
+    // stats.value = newStats
+    stats.value = { total: 0, pending: 0, waiting: 0, success: 0, failed: 0 }
 
     // Обновляем сообщение о статусе
     if (store.isSyncing) {
       statusMessage.value = 'Идет синхронизация данных...'
-    } else if (newStats.pending > 0) {
-      statusMessage.value = `Ожидание запуска синхронизации... (${newStats.pending} недель в очереди)`
-    } else if (newStats.waiting > 0) {
-      statusMessage.value = `Ожидание данных от Wildberries... (${newStats.waiting} периодов)`
-    } else if (newStats.failed > 0) {
-      statusMessage.value = `Завершено с ошибками. ${newStats.success} недель загружено, ${newStats.failed} ошибок`
-    } else if (newStats.success > 0) {
-      statusMessage.value = `Все данные загружены! (${newStats.success} недель)`
+    } else if (stats.value.pending > 0) {
+      statusMessage.value = `Ожидание запуска синхронизации... (${stats.value.pending} недель в очереди)`
+    } else if (stats.value.waiting > 0) {
+      statusMessage.value = `Ожидание данных от Wildberries... (${stats.value.waiting} периодов)`
+    } else if (stats.value.failed > 0) {
+      statusMessage.value = `Завершено с ошибками. ${stats.value.success} недель загружено, ${stats.value.failed} ошибок`
+    } else if (stats.value.success > 0) {
+      statusMessage.value = `Все данные загружены! (${stats.value.success} недель)`
     } else {
       statusMessage.value = 'Подготовка к синхронизации...'
     }
@@ -157,34 +164,35 @@ const updateStats = async () => {
 
 const handleSkipToLastWeeks = async () => {
   try {
-    const coordinator = container.getSyncCoordinator()
-    statusMessage.value = 'Создание очереди для последних 2 недель...'
+    // TODO: Восстановить после реализации SyncCoordinator
+    // const coordinator = container.getSyncCoordinator()
+    statusMessage.value = 'Функция временно недоступна'
     
-    // Удаляем все pending задачи
-    const { db } = await import('@infrastructure/db/database')
-    const allPending = await db.syncRegistry.where('status').equals('pending').toArray()
-    const idsToDelete = allPending.map(e => e.id!).filter((id): id is number => id !== undefined)
-    if (idsToDelete.length > 0) {
-      await db.syncRegistry.bulkDelete(idsToDelete)
-    }
+    // // Удаляем все pending задачи
+    // const { db } = await import('@infrastructure/db/database')
+    // const allPending = await db.syncRegistry.where('status').equals('pending').toArray()
+    // const idsToDelete = allPending.map(e => e.id!).filter((id): id is number => id !== undefined)
+    // if (idsToDelete.length > 0) {
+    //   await db.syncRegistry.bulkDelete(idsToDelete)
+    // }
 
-    // Создаем очередь только для последних 2 недель
-    await coordinator.generateLastWeeksQueue(2)
+    // // Создаем очередь только для последних 2 недель
+    // await coordinator.generateLastWeeksQueue(2)
     
-    statusMessage.value = 'Очередь создана. Запуск синхронизации...'
-    emit('skipToLastWeeks')
+    // statusMessage.value = 'Очередь создана. Запуск синхронизации...'
+    // emit('skipToLastWeeks')
     
-    // Запускаем синхронизацию
-    store.startSync()
-      .then(() => {
-        console.log('✅ Синхронизация последних недель завершена')
-      })
-      .catch(error => {
-        console.error('❌ Ошибка синхронизации:', error)
-      })
+    // // Запускаем синхронизацию
+    // store.startSync()
+    //   .then(() => {
+    //     console.log('✅ Синхронизация последних недель завершена')
+    //   })
+    //   .catch(error => {
+    //     console.error('❌ Ошибка синхронизации:', error)
+    //   })
     
-    // Обновляем статистику
-    await updateStats()
+    // // Обновляем статистику
+    // await updateStats()
   } catch (error) {
     console.error('Ошибка при пропуске истории:', error)
     statusMessage.value = 'Ошибка при создании очереди'
