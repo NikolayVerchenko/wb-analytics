@@ -47,8 +47,41 @@ export class AcceptanceFetcher {
   }
 
   /**
+   * Разбивает период на части максимум по 31 день (ограничение API)
+   * @param dateFrom Начальная дата (YYYY-MM-DD)
+   * @param dateTo Конечная дата (YYYY-MM-DD)
+   * @returns Массив периодов [dateFrom, dateTo]
+   */
+  private splitDateRange(dateFrom: string, dateTo: string): Array<[string, string]> {
+    const periods: Array<[string, string]> = []
+    let currentFrom = new Date(dateFrom)
+    const endDate = new Date(dateTo)
+    const maxDays = 31 // Максимальный период для API приёмки
+
+    while (currentFrom <= endDate) {
+      const currentTo = new Date(currentFrom)
+      currentTo.setDate(currentTo.getDate() + maxDays - 1) // -1 потому что включаем начальный день
+      
+      if (currentTo > endDate) {
+        currentTo.setTime(endDate.getTime())
+      }
+
+      periods.push([
+        this.formatDate(currentFrom),
+        this.formatDate(currentTo)
+      ])
+
+      currentFrom = new Date(currentTo)
+      currentFrom.setDate(currentFrom.getDate() + 1) // Следующий день после окончания текущего периода
+    }
+
+    return periods
+  }
+
+  /**
    * Загружает стоимость приемки за период и сохраняет в БД
    * Использует асинхронный API: создает задачу, ждет готовности, скачивает отчет
+   * Автоматически разбивает период на части по 31 день (ограничение API)
    * @param dateFrom Начальная дата (YYYY-MM-DD)
    * @param dateTo Конечная дата (YYYY-MM-DD)
    * @returns Общее количество загруженных записей
@@ -62,107 +95,123 @@ export class AcceptanceFetcher {
     try {
       console.log(`[AcceptanceFetcher] Начало загрузки стоимости приемки за период: ${dateFrom} - ${dateTo}`)
 
-      // Шаг 1: Создаем задачу на генерацию отчета
-      console.log(`[AcceptanceFetcher] Создание задачи на генерацию отчета...`)
-      const taskId = await this.apiClient.createAcceptanceTask(dateFrom, dateTo)
-      console.log(`[AcceptanceFetcher] Задача создана, taskId: ${taskId}`)
+      // Разбиваем период на части по 31 день
+      const periods = this.splitDateRange(dateFrom, dateTo)
+      console.log(`[AcceptanceFetcher] Период разбит на ${periods.length} частей (максимум 31 день каждая)`)
 
-      // Шаг 2: Ждем готовности отчета
-      const maxWaitTime = 120000 // 2 минуты в миллисекундах
-      const checkInterval = 5000 // 5 секунд между проверками
-      const startTime = Date.now()
-      let status: string
+      let totalSavedRecords = 0
 
-      console.log(`[AcceptanceFetcher] Ожидание готовности отчета (максимум 2 минуты)...`)
-      
-      while (true) {
-        // Проверяем статус
-        status = await this.apiClient.getAcceptanceStatus(taskId)
-        console.log(`[AcceptanceFetcher] Статус задачи: ${status}`)
+      // Обрабатываем каждый период отдельно
+      for (let i = 0; i < periods.length; i++) {
+        const [periodFrom, periodTo] = periods[i]
+        console.log(`[AcceptanceFetcher] Обработка части ${i + 1}/${periods.length}: ${periodFrom} - ${periodTo}`)
 
-        if (status === 'done') {
-          console.log(`[AcceptanceFetcher] Отчет готов!`)
-          break
+        // Шаг 1: Создаем задачу на генерацию отчета
+        console.log(`[AcceptanceFetcher] Создание задачи на генерацию отчета...`)
+        const taskId = await this.apiClient.createAcceptanceTask(periodFrom, periodTo)
+        console.log(`[AcceptanceFetcher] Задача создана, taskId: ${taskId}`)
+
+        // Шаг 2: Ждем готовности отчета
+        const maxWaitTime = 120000 // 2 минуты в миллисекундах
+        const checkInterval = 5000 // 5 секунд между проверками
+        const startTime = Date.now()
+        let status: string
+
+        console.log(`[AcceptanceFetcher] Ожидание готовности отчета (максимум 2 минуты)...`)
+        
+        while (true) {
+          // Проверяем статус
+          status = await this.apiClient.getAcceptanceStatus(taskId)
+          console.log(`[AcceptanceFetcher] Статус задачи: ${status}`)
+
+          if (status === 'done') {
+            console.log(`[AcceptanceFetcher] Отчет готов!`)
+            break
+          }
+
+          // Проверяем таймаут
+          const elapsed = Date.now() - startTime
+          if (elapsed >= maxWaitTime) {
+            throw new Error(`Превышено время ожидания отчета (2 минуты). Последний статус: ${status}`)
+          }
+
+          // Ждем перед следующей проверкой
+          console.log(`[AcceptanceFetcher] Ожидание 5 секунд перед следующей проверкой...`)
+          await new Promise(resolve => setTimeout(resolve, checkInterval))
         }
 
-        // Проверяем таймаут
-        const elapsed = Date.now() - startTime
-        if (elapsed >= maxWaitTime) {
-          throw new Error(`Превышено время ожидания отчета (2 минуты). Последний статус: ${status}`)
+        // Шаг 3: Скачиваем отчет
+        console.log(`[AcceptanceFetcher] Скачивание отчета...`)
+        const rawData = await this.apiClient.downloadAcceptanceReport(taskId)
+
+        if (!rawData || rawData.length === 0) {
+          console.log(`[AcceptanceFetcher] Часть ${i + 1}/${periods.length}: данных не найдено`)
+          continue // Переходим к следующему периоду
         }
 
-        // Ждем перед следующей проверкой
-        console.log(`[AcceptanceFetcher] Ожидание 5 секунд перед следующей проверкой...`)
-        await new Promise(resolve => setTimeout(resolve, checkInterval))
+        console.log(`[AcceptanceFetcher] Часть ${i + 1}/${periods.length}: получено ${rawData.length} записей из API`)
+
+        // Шаг 4: Группируем и суммируем данные
+        // PK = ${nmID}_${shkCreateDate}
+        const costsMap = new Map<string, IAcceptanceCost>()
+
+        for (const item of rawData) {
+          const nmID = item.nmID
+          const shkCreateDate = item.shkCreateDate
+          const total = item.total || 0
+
+          if (!nmID || !shkCreateDate || total <= 0) {
+            continue
+          }
+
+          const pk = this.generatePK(nmID, shkCreateDate)
+          const dt = this.formatDate(shkCreateDate)
+
+          const existing = costsMap.get(pk)
+          if (existing) {
+            // Суммируем затраты, если запись уже существует (несколько приемок одного артикула за день)
+            existing.costs = (existing.costs || 0) + total
+          } else {
+            // Создаем новую запись
+            costsMap.set(pk, {
+              pk,
+              dt,
+              ni: nmID,
+              costs: total,
+            })
+          }
+        }
+
+        // Преобразуем Map в массив
+        const groupedData = Array.from(costsMap.values())
+
+        if (groupedData.length > 0) {
+          console.log(`[AcceptanceFetcher] Часть ${i + 1}/${periods.length}: сохранение ${groupedData.length} записей в БД...`)
+
+          // Сохраняем в БД
+          // bulkPut автоматически заменяет записи с существующими PK (overwrite)
+          await db.acceptance_costs.bulkPut(groupedData)
+          totalSavedRecords += groupedData.length
+        }
       }
 
-      // Шаг 3: Скачиваем отчет
-      console.log(`[AcceptanceFetcher] Скачивание отчета...`)
-      const rawData = await this.apiClient.downloadAcceptanceReport(taskId)
-
-      if (!rawData || rawData.length === 0) {
+      if (totalSavedRecords === 0) {
         console.log(`[AcceptanceFetcher] Загрузка завершена: данных для сохранения не найдено`)
         this.isFetching.value = false
         return 0
       }
 
-      console.log(`[AcceptanceFetcher] Получено ${rawData.length} записей из API`)
-
-      // Шаг 4: Группируем и суммируем данные
-      // PK = ${nmID}_${shkCreateDate}
-      const costsMap = new Map<string, IAcceptanceCost>()
-
-      for (const item of rawData) {
-        const nmID = item.nmID
-        const shkCreateDate = item.shkCreateDate
-        const total = item.total || 0
-
-        if (!nmID || !shkCreateDate || total <= 0) {
-          continue
-        }
-
-        const pk = this.generatePK(nmID, shkCreateDate)
-        const dt = this.formatDate(shkCreateDate)
-
-        const existing = costsMap.get(pk)
-        if (existing) {
-          // Суммируем затраты, если запись уже существует (несколько приемок одного артикула за день)
-          existing.costs = (existing.costs || 0) + total
-        } else {
-          // Создаем новую запись
-          costsMap.set(pk, {
-            pk,
-            dt,
-            ni: nmID,
-            costs: total,
-          })
-        }
-      }
-
-      // Преобразуем Map в массив
-      const groupedData = Array.from(costsMap.values())
-
-      if (groupedData.length === 0) {
-        console.log(`[AcceptanceFetcher] Загрузка завершена: данных для сохранения не найдено после обработки`)
-        this.isFetching.value = false
-        return 0
-      }
-
-      console.log(`[AcceptanceFetcher] Сохранение ${groupedData.length} записей в БД...`)
-
-      // Сохраняем в БД
-      // bulkPut автоматически заменяет записи с существующими PK (overwrite)
-      await db.acceptance_costs.bulkPut(groupedData)
-
-      const totalCosts = groupedData.reduce((sum, record) => sum + (record.costs || 0), 0)
+      const allRecords = await db.acceptance_costs.toArray()
+      const totalCosts = allRecords.reduce((sum, record) => sum + (record.costs || 0), 0)
       console.log(`[AcceptanceFetcher] ✅ Загрузка завершена успешно!`)
-      console.log(`[AcceptanceFetcher]   - Сохранено записей: ${groupedData.length}`)
+      console.log(`[AcceptanceFetcher]   - Обработано периодов: ${periods.length}`)
+      console.log(`[AcceptanceFetcher]   - Сохранено записей: ${totalSavedRecords}`)
       console.log(`[AcceptanceFetcher]   - Общая сумма затрат: ${totalCosts.toFixed(2)} руб.`)
 
-      this.loadedCount.value = groupedData.length
+      this.loadedCount.value = totalSavedRecords
       this.isFetching.value = false
 
-      return groupedData.length
+      return totalSavedRecords
     } catch (error: any) {
       this.isFetching.value = false
       this.error.value = error.message || 'Неизвестная ошибка при загрузке стоимости приемки'

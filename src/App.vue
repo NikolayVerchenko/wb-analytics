@@ -23,12 +23,22 @@ import { provideDI } from './presentation/composables/useDependencyInjection'
 import TopMenu from './presentation/components/TopMenu.vue'
 import ToastContainer from './presentation/components/ToastContainer.vue'
 import { toastService } from './presentation/services/ToastService'
+import { useAnalyticsStore } from './stores/analyticsStore'
 
 // Предоставляем DI для дочерних компонентов
 provideDI()
 
+// Инициализируем analyticsStore и загружаем данные
+const analyticsStore = useAnalyticsStore()
+
 // Автозапуск синхронизации при загрузке страницы (если есть готовые к повтору периоды)
 onMounted(async () => {
+  // Загружаем данные из БД в store
+  try {
+    await analyticsStore.loadAllDataFromDb()
+  } catch (error) {
+    console.error('Ошибка при загрузке данных в store:', error)
+  }
   // Небольшая задержка, чтобы не блокировать первоначальную загрузку UI
   setTimeout(async () => {
     try {
@@ -156,43 +166,6 @@ onMounted(async () => {
       console.error('Ошибка при проверке автозапуска синхронизации:', error)
     }
   }, 2000) // Задержка 2 секунды после загрузки страницы
-
-  // Обработка online/offline событий для автоматического возобновления синхронизации
-  const handleOnline = () => {
-    console.log('🌐 [Network] Соединение восстановлено')
-    toastService.success('🌐 Соединение восстановлено', 'Синхронизация будет продолжена автоматически', 3000)
-    
-    // TODO: Восстановить после реализации wbStore
-    // Автоматически возобновляем синхронизацию через небольшую задержку
-    // setTimeout(() => {
-    //   const store = useWbStore()
-    //   if (!store.isSyncing && !store.isBackgroundSyncing) {
-    //     // Проверяем, есть ли задачи для синхронизации
-    //     store.startSync().catch(error => {
-    //       console.error('Ошибка при автоматическом возобновлении синхронизации:', error)
-    //     })
-    //   }
-    // }, 2000)
-  }
-
-  const handleOffline = () => {
-    console.log('⚠️ [Network] Соединение потеряно')
-    toastService.warning(
-      '⚠️ Соединение потеряно',
-      'Синхронизация приостановлена. Мы продолжим автоматически, как только связь восстановится.',
-      5000
-    )
-  }
-
-  // Добавляем обработчики событий
-  window.addEventListener('online', handleOnline)
-  window.addEventListener('offline', handleOffline)
-
-  // Удаляем обработчики при размонтировании компонента
-  onBeforeUnmount(() => {
-    window.removeEventListener('online', handleOnline)
-    window.removeEventListener('offline', handleOffline)
-  })
 })
 
 </script>

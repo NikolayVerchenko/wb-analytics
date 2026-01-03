@@ -108,6 +108,130 @@ app.all('/adv/*', async (req, res) => {
   }
 })
 
+// Прокси эндпоинт для Seller Analytics API (/api/v1/paid_storage) - создание задачи платного хранения
+app.all('/api/v1/paid_storage', async (req, res) => {
+  try {
+    // Путь уже содержит /api/v1/paid_storage, просто добавляем базовый URL
+    const targetUrl = `${WB_SELLER_ANALYTICS_API_BASE_URL}${req.path}`
+
+    console.log(`[Proxy Seller Analytics] ${req.method} ${req.path} -> ${targetUrl}`)
+
+    // Определяем API ключ: приоритет у заголовка X-WB-API-Key от клиента, затем из .env
+    const clientApiKey = req.headers['x-wb-api-key'] || req.headers['X-WB-API-Key']
+    const apiKey = clientApiKey || WB_API_KEY
+
+    // Проверяем наличие API ключа
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'API ключ не найден. Укажите его в заголовке X-WB-API-Key или в переменной окружения WB_API_KEY/VITE_WB_API_KEY.'
+      })
+    }
+
+    // Подготавливаем заголовки для запроса к WB API
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
+    }
+
+    // Выполняем запрос к WB API
+    const config = {
+      method: req.method,
+      url: targetUrl,
+      headers: headers,
+      params: req.query,
+      data: req.body,
+      timeout: 30000
+    }
+
+    const response = await axios(config)
+    console.log(`[Proxy Seller Analytics] Response Status: ${response.status}`)
+    res.status(response.status).json(response.data)
+
+  } catch (error) {
+    console.error('[Proxy Seller Analytics Error]', error.message)
+    if (error.response) {
+      console.error('[Proxy Seller Analytics Error] Response Status:', error.response.status)
+      console.error('[Proxy Seller Analytics Error] Response Data:', JSON.stringify(error.response.data, null, 2))
+      res.status(error.response.status).json({
+        error: error.response.data || error.message,
+        status: error.response.status
+      })
+    } else if (error.request) {
+      res.status(503).json({
+        error: 'Сервер Wildberries Seller Analytics API недоступен',
+        message: error.message
+      })
+    } else {
+      res.status(500).json({
+        error: 'Внутренняя ошибка прокси-сервера',
+        message: error.message
+      })
+    }
+  }
+})
+
+// Прокси эндпоинт для Seller Analytics API (/api/v1/paid_storage/*) - статус и скачивание платного хранения - должен быть ПЕРЕД /api/*
+app.all('/api/v1/paid_storage/*', async (req, res) => {
+  try {
+    // Путь уже содержит /api/v1/paid_storage/..., просто добавляем базовый URL
+    const targetUrl = `${WB_SELLER_ANALYTICS_API_BASE_URL}${req.path}`
+
+    console.log(`[Proxy Seller Analytics] ${req.method} ${req.path} -> ${targetUrl}`)
+
+    // Определяем API ключ: приоритет у заголовка X-WB-API-Key от клиента, затем из .env
+    const clientApiKey = req.headers['x-wb-api-key'] || req.headers['X-WB-API-Key']
+    const apiKey = clientApiKey || WB_API_KEY
+
+    // Проверяем наличие API ключа
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'API ключ не найден. Укажите его в заголовке X-WB-API-Key или в переменной окружения WB_API_KEY/VITE_WB_API_KEY.'
+      })
+    }
+
+    // Подготавливаем заголовки для запроса к WB API
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
+    }
+
+    // Выполняем запрос к WB API
+    const config = {
+      method: req.method,
+      url: targetUrl,
+      headers: headers,
+      params: req.query,
+      data: req.body,
+      timeout: 30000
+    }
+
+    const response = await axios(config)
+    console.log(`[Proxy Seller Analytics] Response Status: ${response.status}`)
+    res.status(response.status).json(response.data)
+
+  } catch (error) {
+    console.error('[Proxy Seller Analytics Error]', error.message)
+    if (error.response) {
+      console.error('[Proxy Seller Analytics Error] Response Status:', error.response.status)
+      console.error('[Proxy Seller Analytics Error] Response Data:', JSON.stringify(error.response.data, null, 2))
+      res.status(error.response.status).json({
+        error: error.response.data || error.message,
+        status: error.response.status
+      })
+    } else if (error.request) {
+      res.status(503).json({
+        error: 'Сервер Wildberries Seller Analytics API недоступен',
+        message: error.message
+      })
+    } else {
+      res.status(500).json({
+        error: 'Внутренняя ошибка прокси-сервера',
+        message: error.message
+      })
+    }
+  }
+})
+
 // Прокси эндпоинт для Seller Analytics API (/api/v1/acceptance_report) - создание задачи
 app.all('/api/v1/acceptance_report', async (req, res) => {
   try {
@@ -369,6 +493,174 @@ app.all('/supplies-api/*', async (req, res) => {
     } else if (error.request) {
       res.status(503).json({
         error: 'Сервер Wildberries недоступен',
+        message: error.message
+      })
+    } else {
+      res.status(500).json({
+        error: 'Внутренняя ошибка прокси-сервера',
+        message: error.message
+      })
+    }
+  }
+})
+
+// Прокси эндпоинт для Seller Analytics API (/api/v1/warehouse_remains) - создание задачи остатков - должен быть ПЕРЕД /api/analytics/*
+app.all('/api/v1/warehouse_remains', async (req, res) => {
+  try {
+    const targetUrl = `${WB_SELLER_ANALYTICS_API_BASE_URL}${req.path}`
+    console.log(`[Proxy Seller Analytics (Warehouse Remains)] ${req.method} ${req.path} -> ${targetUrl}`)
+
+    const clientApiKey = req.headers['x-wb-api-key'] || req.headers['X-WB-API-Key']
+    const apiKey = clientApiKey || WB_API_KEY
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'API ключ не найден. Укажите его в заголовке X-WB-API-Key или в переменной окружения WB_API_KEY/VITE_WB_API_KEY.'
+      })
+    }
+
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
+    }
+
+    const config = {
+      method: req.method,
+      url: targetUrl,
+      headers: headers,
+      params: req.query,
+      data: req.body,
+      timeout: 30000
+    }
+
+    const response = await axios(config)
+    console.log(`[Proxy Seller Analytics (Warehouse Remains)] Response Status: ${response.status}`)
+    res.status(response.status).json(response.data)
+
+  } catch (error) {
+    console.error('[Proxy Seller Analytics (Warehouse Remains) Error]', error.message)
+    if (error.response) {
+      console.error('[Proxy Seller Analytics (Warehouse Remains) Error] Response Status:', error.response.status)
+      console.error('[Proxy Seller Analytics (Warehouse Remains) Error] Response Data:', JSON.stringify(error.response.data, null, 2))
+      res.status(error.response.status).json({
+        error: error.response.data || error.message,
+        status: error.response.status
+      })
+    } else if (error.request) {
+      res.status(503).json({
+        error: 'Сервер Wildberries Seller Analytics API недоступен',
+        message: error.message
+      })
+    } else {
+      res.status(500).json({
+        error: 'Внутренняя ошибка прокси-сервера',
+        message: error.message
+      })
+    }
+  }
+})
+
+// Прокси эндпоинт для Seller Analytics API (/api/v1/warehouse_remains/*) - статус и скачивание остатков - должен быть ПЕРЕД /api/analytics/*
+app.all('/api/v1/warehouse_remains/*', async (req, res) => {
+  try {
+    const targetUrl = `${WB_SELLER_ANALYTICS_API_BASE_URL}${req.path}`
+    console.log(`[Proxy Seller Analytics (Warehouse Remains)] ${req.method} ${req.path} -> ${targetUrl}`)
+
+    const clientApiKey = req.headers['x-wb-api-key'] || req.headers['X-WB-API-Key']
+    const apiKey = clientApiKey || WB_API_KEY
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'API ключ не найден. Укажите его в заголовке X-WB-API-Key или в переменной окружения WB_API_KEY/VITE_WB_API_KEY.'
+      })
+    }
+
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
+    }
+
+    const config = {
+      method: req.method,
+      url: targetUrl,
+      headers: headers,
+      params: req.query,
+      data: req.body,
+      timeout: 30000
+    }
+
+    const response = await axios(config)
+    console.log(`[Proxy Seller Analytics (Warehouse Remains)] Response Status: ${response.status}`)
+    res.status(response.status).json(response.data)
+
+  } catch (error) {
+    console.error('[Proxy Seller Analytics (Warehouse Remains) Error]', error.message)
+    if (error.response) {
+      console.error('[Proxy Seller Analytics (Warehouse Remains) Error] Response Status:', error.response.status)
+      console.error('[Proxy Seller Analytics (Warehouse Remains) Error] Response Data:', JSON.stringify(error.response.data, null, 2))
+      res.status(error.response.status).json({
+        error: error.response.data || error.message,
+        status: error.response.status
+      })
+    } else if (error.request) {
+      res.status(503).json({
+        error: 'Сервер Wildberries Seller Analytics API недоступен',
+        message: error.message
+      })
+    } else {
+      res.status(500).json({
+        error: 'Внутренняя ошибка прокси-сервера',
+        message: error.message
+      })
+    }
+  }
+})
+
+// Прокси эндпоинт для Seller Analytics API (/api/analytics/*) - должен быть ПЕРЕД /api/*
+app.all('/api/analytics/*', async (req, res) => {
+  try {
+    const targetUrl = `${WB_SELLER_ANALYTICS_API_BASE_URL}${req.path}`
+    console.log(`[Proxy Seller Analytics] ${req.method} ${req.path} -> ${targetUrl}`)
+
+    const clientApiKey = req.headers['x-wb-api-key'] || req.headers['X-WB-API-Key']
+    const apiKey = clientApiKey || WB_API_KEY
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'API ключ не найден. Укажите его в заголовке X-WB-API-Key или в переменной окружения WB_API_KEY/VITE_WB_API_KEY.'
+      })
+    }
+
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
+    }
+
+    const config = {
+      method: req.method,
+      url: targetUrl,
+      headers: headers,
+      params: req.query,
+      data: req.body,
+      timeout: 30000
+    }
+
+    const response = await axios(config)
+    console.log(`[Proxy Seller Analytics] Response Status: ${response.status}`)
+    res.status(response.status).json(response.data)
+
+  } catch (error) {
+    console.error('[Proxy Seller Analytics Error]', error.message)
+    if (error.response) {
+      console.error('[Proxy Seller Analytics Error] Response Status:', error.response.status)
+      console.error('[Proxy Seller Analytics Error] Response Data:', JSON.stringify(error.response.data, null, 2))
+      res.status(error.response.status).json({
+        error: error.response.data || error.message,
+        status: error.response.status
+      })
+    } else if (error.request) {
+      res.status(503).json({
+        error: 'Сервер Wildberries Seller Analytics API недоступен',
         message: error.message
       })
     } else {

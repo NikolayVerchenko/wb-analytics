@@ -8,6 +8,7 @@ import ShipmentsView from '../presentation/components/ShipmentsView.vue'
 import FinanceView from '../presentation/components/FinanceView.vue'
 import BatchManagementView from '../presentation/components/BatchManagementView.vue'
 import SyncView from '../views/SyncView.vue'
+import CostsView from '../views/CostsView.vue'
 
 const routes = [
   {
@@ -19,6 +20,11 @@ const routes = [
     path: '/sync',
     name: 'Sync',
     component: SyncView,
+  },
+  {
+    path: '/costs',
+    name: 'Costs',
+    component: CostsView,
   },
   {
     path: '/summary',

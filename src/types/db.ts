@@ -95,6 +95,7 @@ export interface IReturn extends BaseFinanceRecord {
   qt?: number // Количество (quantity)
   pv?: number // Цена продажи (retail_price)
   pa?: number // Сумма продажи (retail_amount)
+  pz?: number // К выплате (ppvz_for_pay)
 }
 
 /**
@@ -135,11 +136,92 @@ export interface IAdvCost {
 
 /**
  * Интерфейс для стоимости приемки
- * PK: ${nmId}_${date} (Артикул_Дата)
+ * PK: ${nmID}_${shkCreateDate} (Артикул_Дата приёмки)
  */
 export interface IAcceptanceCost {
-  pk: string // Primary Key: ${nmId}_${date}
-  dt: string // Дата (YYYY-MM-DD)
-  ni: number // Артикул WB (nmId)
+  pk: string // Primary Key: ${nmID}_${shkCreateDate}
+  dt: string // Дата приёмки (YYYY-MM-DD)
+  ni: number // Артикул WB (nmID)
   costs: number // Сумма стоимости приемки
+}
+
+/**
+ * Интерфейс для стоимости платного хранения
+ * PK: ${date}_${nmId}_${size} (Дата_Артикул_Размер)
+ */
+export interface IStorageCost {
+  pk: string // Primary Key: ${date}_${nmId}_${size}
+  dt: string // Дата (YYYY-MM-DD)
+  sj: string // Предмет (subject_name)
+  bc: string // Бренд (brand_name)
+  sa: string // Артикул продавца (sa_name)
+  ni: number // Артикул WB (nmId)
+  sz: string // Размер (size)
+  sc: number // Сумма стоимости хранения (storage cost)
+}
+
+/**
+ * Интерфейс для статистики заказов (Воронка продаж v3)
+ * PK: ${dt}_${ni} (Дата начала периода_Артикул WB)
+ */
+export interface IProductOrder {
+  pk: string // Primary Key: ${dt}_${ni}
+  dt: string // Дата начала периода (YYYY-MM-DD)
+  ni: number // Артикул WB (nmId)
+  sa: string // Артикул продавца (vendorCode)
+  bc: string // Бренд (brandName)
+  sj: string // Название предмета (subjectName)
+  oc: number // Заказали товаров, шт. (orderCount)
+  os: number // Заказали на сумму (orderSum)
+  vsc: number // Количество переходов в карточку товара (openCount)
+  cc: number // Положили в корзину, шт. (cartCount)
+  bc_cnt: number // Выкупили товаров, шт. (buyoutCount)
+  bs: number // Выкупили на сумму (buyoutSum)
+  cnc: number // Отменили товаров, шт. (cancelCount)
+  cns: number // Отменили на сумму (cancelSum)
+  fav: number // Добавили в Отложенные (addToWishlist)
+}
+
+/**
+ * Интерфейс для карточек товаров (справочник)
+ * PK: ${ni}_${sz} (Артикул WB_Размер)
+ */
+export interface IProductCard {
+  pk: string // Primary Key: ${ni}_${sz}
+  ni: number // Артикул WB (nmID)
+  sz: string // Размер товара (techSize)
+  sj: string // Название предмета (subjectName)
+  sa: string // Артикул продавца (vendorCode)
+  bc: string // Бренд (brand)
+  title: string // Наименование товара (title)
+  img: string // URL фото (photos[0].tm)
+  dims: string // Габариты в формате "lengthxwidthxheight" (например, "55x40x15")
+  weight: number // Вес товара с упаковкой, кг (weightBrutto)
+}
+
+/**
+ * Интерфейс для остатков на складах
+ * PK: ${ni}_${sz} (Артикул WB_Размер)
+ */
+export interface IWarehouseRemain {
+  pk: string // Primary Key: ${ni}_${sz}
+  bc: string // Бренд (brand)
+  sj: string // Название предмета (subjectName)
+  sa: string // Артикул продавца (vendorCode)
+  ni: number // Артикул WB (nmId)
+  sz: string // Размер товара (techSize)
+  q_wh: number // Остатки на складах (quantity из "Всего находится на складах")
+  q_way_cust: number // В пути до получателей (quantity из "В пути до получателей")
+  q_way_wh: number // В пути возвраты на склад WB (quantity из "В пути возвраты на склад WB")
+  details: string // JSON.stringify всего массива warehouses (для детального просмотра)
+}
+
+/**
+ * Интерфейс для себестоимости товаров
+ * PK: ni (Артикул WB)
+ */
+export interface IUnitCost {
+  ni: number // Primary Key: Артикул WB (nmId)
+  cost: number // Себестоимость товара (руб.)
+  taxRate: number // Налоговая ставка (%)
 }

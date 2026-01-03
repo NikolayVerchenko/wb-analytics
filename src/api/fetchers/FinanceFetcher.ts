@@ -80,6 +80,7 @@ export class FinanceFetcher {
       qt: item.quantity || 0,
       pv: item.retail_price || 0,
       pa: item.retail_amount || 0,
+      pz: item.ppvz_for_pay || 0,
     }
   }
 
@@ -175,6 +176,7 @@ export class FinanceFetcher {
             existing.qt = (existing.qt || 0) + (ret.qt || 0)
             existing.pv = (existing.pv || 0) + (ret.pv || 0)
             existing.pa = (existing.pa || 0) + (ret.pa || 0)
+            existing.pz = (existing.pz || 0) + (ret.pz || 0)
           } else {
             returnsMap.set(ret.pk, ret)
           }
