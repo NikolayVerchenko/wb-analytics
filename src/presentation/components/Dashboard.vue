@@ -97,8 +97,8 @@
           :value="formatCommission(dashboardData.totals.sppAmount, dashboardData.totals.sppPercent)"
           icon="TrendingDown"
           color="purple"
-          :trend="dashboardData.deltas.sppAmount"
-          :delta="dashboardData.deltaText.sppAmount"
+          :trend="dashboardData.deltas.sppPercent"
+          :delta="dashboardData.deltaText.sppPercent"
         />
         <MetricCard
           title="К перечислению"
@@ -121,7 +121,7 @@
           :value="formatCurrency(dashboardData.totals.logistics)"
           icon="Truck"
           color="purple"
-          :trend="dashboardData.deltas.logistics"
+          :trend="dashboardData.deltas.logistics * -1"
           :delta="dashboardData.deltaText.logistics"
         />
         <MetricCard
@@ -129,7 +129,7 @@
           :value="formatCurrency(dashboardData.totals.storageCosts)"
           icon="Wallet"
           color="purple"
-          :trend="dashboardData.deltas.storageCosts"
+          :trend="dashboardData.deltas.storageCosts * -1"
           :delta="dashboardData.deltaText.storageCosts"
         />
         <MetricCard
@@ -640,6 +640,7 @@ const dashboardData = computed(() => {
     salesBeforeSpp: calcDeltaPercent(totals.totalRevenue, previousTotals.totalRevenue),
     salesAfterSpp: calcDeltaPercent(totals.totalRevenueAfterSpp, previousTotals.totalRevenueAfterSpp),
     sppAmount: calcDeltaPercent(totals.totalSppAmount, previousTotals.totalSppAmount),
+    sppPercent: calcDeltaPercent(totals.totalSppPercent, previousTotals.totalSppPercent),
     netPay: calcDeltaPercent(totals.totalTransferAmount, previousTotals.totalTransferAmount),
     commissionAmount: calcDeltaPercent(totals.totalCommissionAmount, previousTotals.totalCommissionAmount),
     logistics: calcDeltaPercent(totals.totalLogistics, previousTotals.totalLogistics),
