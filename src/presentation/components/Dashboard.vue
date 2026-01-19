@@ -73,72 +73,96 @@
           :value="formatOrders(dashboardData.totals.ordersSum, dashboardData.totals.ordersCount)"
           icon="Wallet"
           color="purple"
+          :trend="dashboardData.deltas.ordersSum"
+          :delta="dashboardData.deltaText.ordersSum"
         />
         <MetricCard
           title="Реализация до СПП"
           :value="formatSales(dashboardData.totals.salesBeforeSpp, dashboardData.totals.netSalesCount)"
           icon="TrendingUp"
           color="blue"
+          :trend="dashboardData.deltas.salesBeforeSpp"
+          :delta="dashboardData.deltaText.salesBeforeSpp"
         />
         <MetricCard
           title="Реализация после СПП"
           :value="formatCurrency(dashboardData.totals.salesAfterSpp)"
           icon="Truck"
           color="green"
+          :trend="dashboardData.deltas.salesAfterSpp"
+          :delta="dashboardData.deltaText.salesAfterSpp"
         />
         <MetricCard
           title="СПП"
           :value="formatCommission(dashboardData.totals.sppAmount, dashboardData.totals.sppPercent)"
           icon="TrendingDown"
           color="purple"
+          :trend="dashboardData.deltas.sppAmount"
+          :delta="dashboardData.deltaText.sppAmount"
         />
         <MetricCard
           title="К перечислению"
           :value="formatCurrency(dashboardData.totals.netPay)"
           icon="Wallet"
           color="green"
+          :trend="dashboardData.deltas.netPay"
+          :delta="dashboardData.deltaText.netPay"
         />
         <MetricCard
           title="Комиссия"
           :value="formatCommission(dashboardData.totals.commissionAmount, dashboardData.totals.commissionPercent)"
           icon="TrendingDown"
           color="red"
+          :trend="dashboardData.deltas.commissionAmount"
+          :delta="dashboardData.deltaText.commissionAmount"
         />
         <MetricCard
           title="Логистика"
           :value="formatCurrency(dashboardData.totals.logistics)"
           icon="Truck"
           color="purple"
+          :trend="dashboardData.deltas.logistics"
+          :delta="dashboardData.deltaText.logistics"
         />
         <MetricCard
           title="Хранение"
           :value="formatCurrency(dashboardData.totals.storageCosts)"
           icon="Wallet"
           color="purple"
+          :trend="dashboardData.deltas.storageCosts"
+          :delta="dashboardData.deltaText.storageCosts"
         />
         <MetricCard
           title="Реклама"
           :value="formatCurrency(dashboardData.totals.advCosts)"
           icon="TrendingDown"
           color="blue"
+          :trend="dashboardData.deltas.advCosts * -1"
+          :delta="dashboardData.deltaText.advCosts"
         />
         <MetricCard
           title="Себестоимость"
           :value="formatWithPercent(dashboardData.totals.unitCosts, dashboardData.totals.roiPercent, 'ROI')"
           icon="Wallet"
           color="purple"
+          :trend="dashboardData.deltas.unitCosts"
+          :delta="dashboardData.deltaText.unitCosts"
         />
         <MetricCard
           title="Прибыль"
           :value="formatWithPercent(dashboardData.totals.profit, dashboardData.totals.marginPercent, 'Маржа')"
           icon="TrendingUp"
           color="green"
+          :trend="dashboardData.deltas.profit"
+          :delta="dashboardData.deltaText.profit"
         />
         <MetricCard
           title="Возвраты"
           :value="formatCurrency(dashboardData.totals.totalReturns)"
           icon="TrendingDown"
           color="red"
+          :trend="dashboardData.deltas.totalReturns"
+          :delta="dashboardData.deltaText.totalReturns"
         />
       </div>
 
@@ -451,8 +475,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RefreshCw, AlertCircle } from 'lucide-vue-next'
-import { useWeeklyAnalytics } from '../composables/useWeeklyAnalytics'
 import { useDashboardFilter } from '../composables/useDashboardFilter'
+import { filterProducts } from '../composables/useProductFilter'
 import { useAnalyticsStore } from '../../stores/analyticsStore'
 // TODO: Восстановить после реализации wbStore
 // import { useWbStore } from '../stores/wbStore'
@@ -461,8 +485,8 @@ import MetricCard from './MetricCard.vue'
 import PeriodFilter from './PeriodFilter.vue'
 import type { ProductAggregate } from '../../types/analytics'
 import { ReportTotalsCalculator } from '../../application/services/ReportTotalsCalculator'
+import { addDays } from '../../application/sync/date'
 
-const { fetch, data, isLoading } = useWeeklyAnalytics()
 const store = useAnalyticsStore()
 // TODO: Восстановить после реализации wbStore
 // const store = useWbStore()
@@ -482,6 +506,9 @@ const chartData = computed(() => {
     returns: dashboardData.value.weeks.map((w: any) => w.totalReturns),
   }
 })
+
+const isDashboardLoading = ref(false)
+const isLoading = computed(() => isDashboardLoading.value)
 
 const formatCurrency = (value: number): string => {
   return new Intl.NumberFormat('ru-RU', {
@@ -519,13 +546,15 @@ const formatSales = (amount: number, count: number): string => {
 }
 
 const refresh = async () => {
-  await fetch()
+  await loadDashboardData()
 }
 
-const sourceData = computed(() => store.aggregatedReport)
+const sourceData = ref<ProductAggregate[]>([])
+const previousSourceData = ref<ProductAggregate[]>([])
 
 const {
   searchQuery,
+  debouncedQuery,
   selectedVendorCodes,
   selectedSubjects,
   selectedBrands,
@@ -533,11 +562,49 @@ const {
   filteredRows,
 } = useDashboardFilter(sourceData)
 
+const previousFilteredRows = computed(() => {
+  return filterProducts(previousSourceData.value, {
+    selectedVendorCodes: selectedVendorCodes.value,
+    selectedSubjects: selectedSubjects.value,
+    selectedBrands: selectedBrands.value,
+    includeNoBrand: includeNoBrand.value,
+    query: debouncedQuery.value,
+  })
+})
+
+const getPreviousPeriod = (from: string, to: string) => {
+  if (!from || !to) return null
+  const fromDate = new Date(from)
+  const toDate = new Date(to)
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return null
+  }
+  const diffDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1
+  if (diffDays <= 0) return null
+  const prevTo = addDays(from, -1)
+  const prevFrom = addDays(prevTo, -(diffDays - 1))
+  return { from: prevFrom, to: prevTo }
+}
+
+const calcDeltaPercent = (current: number, previous: number): number => {
+  if (previous === 0) {
+    return current > 0 ? 100 : 0
+  }
+  return ((current - previous) / previous) * 100
+}
+
+const formatDeltaPercent = (value: number): string => {
+  if (!Number.isFinite(value)) return '0.0%'
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)}%`
+}
+
 const dashboardData = computed(() => {
   const rows = filteredRows.value
   const dateFrom = dashboardDateFrom.value || ''
   const dateTo = dashboardDateTo.value || ''
   const periodLabel = dateFrom && dateTo ? `${dateFrom} - ${dateTo}` : 'Текущий период'
+  const previousPeriod = dateFrom && dateTo ? getPreviousPeriod(dateFrom, dateTo) : null
 
   const totals = ReportTotalsCalculator.calculateTotals(
     rows,
@@ -548,6 +615,40 @@ const dashboardData = computed(() => {
   )
 
   const returnsSum = rows.reduce((sum, product) => sum + (product.returnsRevenue || 0), 0)
+
+  const previousRows = previousFilteredRows.value
+  const previousTotals = previousPeriod && previousRows.length
+    ? ReportTotalsCalculator.calculateTotals(
+      previousRows,
+      store.storageCosts,
+      store.acceptanceCosts,
+      previousPeriod.from,
+      previousPeriod.to
+    )
+    : ReportTotalsCalculator.calculateTotals(
+      [],
+      store.storageCosts,
+      store.acceptanceCosts,
+      undefined,
+      undefined
+    )
+
+  const previousReturnsSum = previousRows.reduce((sum, product) => sum + (product.returnsRevenue || 0), 0)
+
+  const deltas = {
+    ordersSum: calcDeltaPercent(totals.totalOrdersSum, previousTotals.totalOrdersSum),
+    salesBeforeSpp: calcDeltaPercent(totals.totalRevenue, previousTotals.totalRevenue),
+    salesAfterSpp: calcDeltaPercent(totals.totalRevenueAfterSpp, previousTotals.totalRevenueAfterSpp),
+    sppAmount: calcDeltaPercent(totals.totalSppAmount, previousTotals.totalSppAmount),
+    netPay: calcDeltaPercent(totals.totalTransferAmount, previousTotals.totalTransferAmount),
+    commissionAmount: calcDeltaPercent(totals.totalCommissionAmount, previousTotals.totalCommissionAmount),
+    logistics: calcDeltaPercent(totals.totalLogistics, previousTotals.totalLogistics),
+    storageCosts: calcDeltaPercent(totals.totalStorageCosts, previousTotals.totalStorageCosts),
+    advCosts: calcDeltaPercent(totals.totalAdvCosts, previousTotals.totalAdvCosts),
+    unitCosts: calcDeltaPercent(totals.totalUnitCosts, previousTotals.totalUnitCosts),
+    profit: calcDeltaPercent(totals.totalProfit, previousTotals.totalProfit),
+    totalReturns: calcDeltaPercent(returnsSum, previousReturnsSum),
+  }
 
   return {
     totals: {
@@ -571,6 +672,10 @@ const dashboardData = computed(() => {
       profit: totals.totalProfit,
       marginPercent: totals.totalMarginPercent,
     },
+    deltas,
+    deltaText: Object.fromEntries(
+      Object.entries(deltas).map(([key, value]) => [key, formatDeltaPercent(value)])
+    ) as Record<keyof typeof deltas, string>,
     weeks: [
       {
         weekId: periodLabel,
@@ -589,6 +694,22 @@ const DASHBOARD_PERIOD_KEY = 'dashboard_period'
 const dashboardDateFrom = ref<string>('')
 const dashboardDateTo = ref<string>('')
 
+const loadDashboardData = async () => {
+  const from = dashboardDateFrom.value
+  const to = dashboardDateTo.value
+  if (!from || !to) return
+  isDashboardLoading.value = true
+  try {
+    sourceData.value = await store.aggregateReportForPeriod(from, to)
+    const previous = getPreviousPeriod(from, to)
+    previousSourceData.value = previous
+      ? await store.aggregateReportForPeriod(previous.from, previous.to)
+      : []
+  } finally {
+    isDashboardLoading.value = false
+  }
+}
+
 onMounted(() => {
   const saved = localStorage.getItem(DASHBOARD_PERIOD_KEY)
   if (!saved) return
@@ -603,9 +724,10 @@ onMounted(() => {
   }
 })
 
-watch([dashboardDateFrom, dashboardDateTo], ([from, to]) => {
+watch([dashboardDateFrom, dashboardDateTo], async ([from, to]) => {
   if (!from || !to) return
   localStorage.setItem(DASHBOARD_PERIOD_KEY, JSON.stringify({ from, to }))
+  await loadDashboardData()
 })
 
 const isFiltersOpen = ref(false)
@@ -680,7 +802,7 @@ const toggleDraftBrand = (code: string) => {
 const vendorOptions = computed(() => {
   const vendorMap = new Map<string, { code: string; title?: string }>()
 
-  store.aggregatedReport.forEach((product: ProductAggregate) => {
+  sourceData.value.forEach((product: ProductAggregate) => {
     if (product.sa && !vendorMap.has(product.sa)) {
       vendorMap.set(product.sa, {
         code: product.sa,
@@ -694,7 +816,7 @@ const vendorOptions = computed(() => {
 
 const subjectOptions = computed(() => {
   const subjectSet = new Set<string>()
-  for (const product of store.aggregatedReport) {
+  for (const product of sourceData.value) {
     if (product.sj) {
       subjectSet.add(product.sj)
     }
@@ -721,7 +843,7 @@ const filteredVendorOptions = computed(() => {
 
 const brandOptions = computed(() => {
   const brandSet = new Set<string>()
-  for (const product of store.aggregatedReport) {
+  for (const product of sourceData.value) {
     if (product.bc) {
       brandSet.add(product.bc)
     }
@@ -779,7 +901,7 @@ const activeFiltersCount = computed(() => {
 // })
 
 onMounted(() => {
-  fetch()
+  loadDashboardData()
 })
 
 onBeforeUnmount(() => {
