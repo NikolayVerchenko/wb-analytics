@@ -275,6 +275,7 @@ export class WbApiClient {
 
   /**
    * Получает одну страницу отчета о реализации
+   * При ошибке 429 (лимит запросов) повторяет запрос с задержкой до успеха
    * @param dateFrom Начальная дата в формате RFC3339
    * @param dateTo Конечная дата в формате RFC3339
    * @param period Период: 'daily' или 'weekly'
@@ -302,60 +303,83 @@ export class WbApiClient {
       params.rrdid = rrdid
     }
 
-    try {
-      // Если используется прокси, передаем ключ в заголовке X-WB-API-Key
-      // Иначе используем стандартный Authorization
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
-      
-      if (this.isProxy()) {
-        headers['X-WB-API-Key'] = this.apiKey
-      } else {
-        headers['Authorization'] = this.apiKey
-      }
+    const baseRetryInterval = 15000 // 15 секунд базовая задержка (увеличено с 10)
+    let retryCount = 0
+    const maxRetries = 10 // Максимум 10 попыток
 
-      const response = await axios.get(this.baseURL + '/reportDetailByPeriod', {
-        params,
-        headers,
-        validateStatus: (status) => status === 200 || status === 204,
-      })
-
-      // 204 означает конец данных
-      if (response.status === 204) {
-        return []
-      }
-
-      return response.data || []
-    } catch (error: any) {
-      if (error?.response?.status === 204) {
-        return []
-      }
-
-      // Обработка ошибок подключения к прокси
-      if (error?.code === 'ERR_NETWORK' || error?.code === 'ERR_CONNECTION_REFUSED') {
-        if (this.isProxy()) {
-          throw new Error(
-            'Прокси-сервер недоступен. Запустите прокси-сервер командой "npm run server" ' +
-            'или отключите прокси, установив VITE_USE_PROXY=false в .env файле.'
-          )
-        } else {
-          throw new Error('Ошибка сети. Проверьте подключение к интернету.')
+    // Повторяем запрос при ошибке 429
+    while (retryCount < maxRetries) {
+      try {
+        // Если используется прокси, передаем ключ в заголовке X-WB-API-Key
+        // Иначе используем стандартный Authorization
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
         }
-      }
+        
+        if (this.isProxy()) {
+          headers['X-WB-API-Key'] = this.apiKey
+        } else {
+          headers['Authorization'] = this.apiKey
+        }
 
-      if (error?.response?.status === 401) {
-        throw new Error('Неверный API-ключ. Проверьте настройки.')
-      }
+        const response = await axios.get(this.baseURL + '/reportDetailByPeriod', {
+          params,
+          headers,
+          validateStatus: (status) => status === 200 || status === 204,
+        })
 
-      if (error?.response?.status === 429) {
-        const rateLimitError = new Error('Превышен лимит запросов. Повторите через 61 секунду.')
-        ;(rateLimitError as any).status = 429
-        throw rateLimitError
-      }
+        // 204 означает конец данных
+        if (response.status === 204) {
+          return []
+        }
 
-      throw error
+        return response.data || []
+      } catch (error: any) {
+        if (error?.response?.status === 204) {
+          return []
+        }
+
+        // Обработка ошибок подключения к прокси
+        if (error?.code === 'ERR_NETWORK' || error?.code === 'ERR_CONNECTION_REFUSED') {
+          if (this.isProxy()) {
+            throw new Error(
+              'Прокси-сервер недоступен. Запустите прокси-сервер командой "npm run server" ' +
+              'или отключите прокси, установив VITE_USE_PROXY=false в .env файле.'
+            )
+          } else {
+            throw new Error('Ошибка сети. Проверьте подключение к интернету.')
+          }
+        }
+
+        if (error?.response?.status === 401) {
+          throw new Error('Неверный API-ключ. Проверьте настройки.')
+        }
+
+        if (error?.response?.status === 429) {
+          retryCount++
+          
+          // Пытаемся получить Retry-After из заголовков
+          const retryAfter = error?.response?.headers?.['retry-after']
+          let waitTime: number
+          
+          if (retryAfter) {
+            waitTime = parseInt(retryAfter, 10) * 1000
+          } else {
+            // Экспоненциальная задержка: 15s, 30s, 60s, 120s... (макс 300s)
+            waitTime = Math.min(baseRetryInterval * Math.pow(2, retryCount - 1), 300000)
+          }
+          
+          console.log(`[WbApiClient] Лимит запросов (429) для fetchReportPage. Попытка ${retryCount}/${maxRetries}. Повтор через ${waitTime / 1000} секунд...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+          continue // Повторяем запрос
+        }
+
+        throw error
+      }
     }
+    
+    // Если достигли максимума попыток
+    throw new Error(`Превышен лимит попыток (${maxRetries}) для fetchReportPage из-за ошибок 429. Попробуйте позже.`)
   }
 
   /**

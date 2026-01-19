@@ -389,12 +389,28 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { Plus, ArrowLeft, Trash2, X, Play } from 'lucide-vue-next'
-import { db } from '@infrastructure/db/database'
-import { container } from '@core/di/container'
-import type { ShipmentGroup } from '@core/domain/entities/ShipmentGroup'
-import type { PurchaseOrder } from '@core/domain/entities/PurchaseOrder'
-import type { Supply } from '@core/domain/entities/Supply'
-import type { PurchaseItem } from '@core/domain/entities/PurchaseItem'
+import { db } from '../../db/db'
+
+// Типы для групп поставок
+interface ShipmentGroup {
+  id?: number
+  name: string
+  date: string
+  orderIds: number[]
+  shipmentIds: number[]
+  createdAt?: string
+  updatedAt?: string
+}
+
+interface PurchaseOrder {
+  id: number
+  [key: string]: any
+}
+
+interface Supply {
+  id: number
+  [key: string]: any
+}
 
 const groups = ref<ShipmentGroup[]>([])
 const selectedGroupId = ref<number | null>(null)
@@ -430,7 +446,10 @@ const updateOrdersSummary = async () => {
   
   try {
     // Загружаем purchaseItems для выбранных заказов
-    const purchaseItems = await db.purchaseItems.where('orderId').anyOf(selectedGroup.value.orderIds).toArray()
+    let purchaseItems: any[] = []
+    if (db.purchaseItems) {
+      purchaseItems = await db.purchaseItems.where('orderId').anyOf(selectedGroup.value.orderIds).toArray()
+    }
     
     purchaseItems.forEach(item => {
       totalQuantity += item.quantity
@@ -518,21 +537,50 @@ const getCoverageStatusLabel = (status?: 'full' | 'partial' | 'empty') => {
 }
 
 const loadGroups = async () => {
-  const loadedGroups = await db.shipmentGroups.toArray()
-  // Убеждаемся, что массивы всегда инициализированы
-  groups.value = loadedGroups.map(group => ({
-    ...group,
-    orderIds: Array.isArray(group.orderIds) ? group.orderIds : [],
-    shipmentIds: Array.isArray(group.shipmentIds) ? group.shipmentIds : [],
-  }))
+  try {
+    // Проверяем существование таблицы перед использованием
+    if (db.shipmentGroups) {
+      const loadedGroups = await db.shipmentGroups.toArray()
+      // Убеждаемся, что массивы всегда инициализированы
+      groups.value = loadedGroups.map(group => ({
+        ...group,
+        orderIds: Array.isArray(group.orderIds) ? group.orderIds : [],
+        shipmentIds: Array.isArray(group.shipmentIds) ? group.shipmentIds : [],
+      }))
+    } else {
+      // Таблица не существует, инициализируем пустым массивом
+      groups.value = []
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке групп:', error)
+    groups.value = []
+  }
 }
 
 const loadOrders = async () => {
-  allOrders.value = await db.purchaseOrders.toArray()
+  try {
+    if (db.purchaseOrders) {
+      allOrders.value = await db.purchaseOrders.toArray()
+    } else {
+      allOrders.value = []
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке заказов:', error)
+    allOrders.value = []
+  }
 }
 
 const loadShipments = async () => {
-  allShipments.value = await db.shipments.toArray()
+  try {
+    if (db.shipments) {
+      allShipments.value = await db.shipments.toArray()
+    } else {
+      allShipments.value = []
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке поставок:', error)
+    allShipments.value = []
+  }
 }
 
 const handleCreateGroup = async () => {
@@ -549,8 +597,12 @@ const handleCreateGroup = async () => {
       updatedAt: new Date().toISOString(),
     }
     
-    await db.shipmentGroups.add(group as ShipmentGroup)
-    await loadGroups()
+    if (db.shipmentGroups) {
+      await db.shipmentGroups.add(group as ShipmentGroup)
+      await loadGroups()
+    } else {
+      console.warn('Таблица shipmentGroups не существует')
+    }
     showCreateForm.value = false
     newGroup.value = {
       name: '',
@@ -568,10 +620,14 @@ const handleDeleteGroup = async (id: number) => {
   if (!confirm('Вы уверены, что хотите удалить эту группу?')) return
   
   try {
-    await db.shipmentGroups.delete(id)
-    await loadGroups()
-    if (selectedGroupId.value === id) {
-      selectedGroupId.value = null
+    if (db.shipmentGroups) {
+      await db.shipmentGroups.delete(id)
+      await loadGroups()
+      if (selectedGroupId.value === id) {
+        selectedGroupId.value = null
+      }
+    } else {
+      console.warn('Таблица shipmentGroups не существует')
     }
   } catch (error) {
     console.error('Ошибка при удалении группы:', error)

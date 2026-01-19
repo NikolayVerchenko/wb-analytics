@@ -1,8 +1,38 @@
 <template>
   <div class="space-y-6">
-    <!-- Панель состояния данных -->
-    <div class="mb-6">
-      <DataHealthPanel />
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="bg-white p-6 rounded-lg shadow">
+        <h2 class="text-xl font-semibold mb-4">Синхронизация данных</h2>
+        <div class="space-y-3">
+          <SyncButton />
+        </div>
+        <div v-if="backfillProgress.isLoading" class="mt-4 p-3 bg-blue-50 rounded-lg text-sm border border-blue-200">
+          <div class="space-y-2">
+            <div class="font-semibold text-blue-900 text-sm">
+              {{ backfillProgress.status }}
+            </div>
+            <div v-if="backfillProgress.progressInfo" class="space-y-2">
+              <div class="flex items-center justify-between text-xs text-blue-700">
+                <span>Неделя: <span class="font-mono">{{ backfillProgress.progressInfo.currentWeek }}</span></span>
+                <span>{{ backfillProgress.progressInfo.current }} / {{ backfillProgress.progressInfo.total }}</span>
+              </div>
+              <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                <div
+                  class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  :style="{ width: backfillProgress.progressInfo.percentage + '%' }"
+                ></div>
+              </div>
+            </div>
+            <div v-if="backfillProgress.error" class="text-xs text-red-600">
+              Ошибка: {{ backfillProgress.error }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white p-6 rounded-lg shadow">
+        <PnLDisplay />
+      </div>
     </div>
 
     <!-- Настройка синхронизации -->
@@ -35,6 +65,81 @@
       </div>
     </div>
 
+    <div v-if="dataFreshness.updatedAt || dataFreshness.items.length" class="mb-4 p-3 bg-white border rounded-lg text-xs">
+      <div class="flex items-center justify-between mb-2">
+        <div class="font-semibold text-gray-800">Свежесть данных</div>
+        <div class="text-gray-500">
+          Обновлено: {{ dataFreshness.updatedAt ? dataFreshness.updatedAt.slice(0, 19).replace('T', ' ') : '-' }}
+        </div>
+      </div>
+      <div v-if="dataFreshness.items.length" class="space-y-1">
+        <div
+          v-for="item in dataFreshness.items"
+          :key="item.dataset"
+          class="flex items-center justify-between bg-gray-50 rounded px-2 py-1"
+        >
+          <div class="font-medium text-gray-700">{{ item.dataset }}</div>
+          <div class="text-gray-600">
+            <span v-if="item.missingFrom && item.missingTo">
+              нет за {{ item.missingFrom }} - {{ item.missingTo }}
+            </span>
+            <span v-else>
+              OK (последняя: {{ item.latestDate ?? '-' }})
+            </span>
+          </div>
+        </div>
+      </div>
+      <div v-else class="text-gray-500">
+        Данных о свежести пока нет. Запустите синхронизацию.
+      </div>
+    </div>
+
+    <div v-if="weeklyReportReadiness.checkedAt" class="mb-3 p-3 bg-white border rounded-lg text-xs">
+      <div class="flex items-center justify-between mb-1">
+        <div class="font-semibold text-gray-800">Готовность недельного отчета (реализация)</div>
+        <div class="text-gray-500">
+          Проверено: {{ weeklyReportReadiness.checkedAt.slice(0, 19).replace('T', ' ') }}
+        </div>
+      </div>
+      <div class="flex items-center justify-between bg-gray-50 rounded px-2 py-1">
+        <div class="text-gray-700">
+          Период: {{ weeklyReportReadiness.range?.from ?? '-' }} - {{ weeklyReportReadiness.range?.to ?? '-' }}
+        </div>
+        <div
+          class="font-medium"
+          :class="weeklyReportReadiness.ready ? 'text-green-600' : 'text-amber-600'"
+        >
+          {{ weeklyReportReadiness.ready ? 'Готов' : 'Не готов' }}
+        </div>
+      </div>
+      <div class="mt-1 text-gray-500">
+        Причина: {{ weeklyReportReadiness.reason ?? '-' }}
+      </div>
+    </div>
+
+    <div class="mb-3 p-3 bg-white border rounded-lg text-xs">
+      <div class="flex items-center justify-between mb-1">
+        <div class="font-semibold text-gray-800">Авто-проверка недельного отчета</div>
+        <div class="text-gray-500">
+          Последняя проверка: {{ weeklyReportAutoSync.lastRunAt ? weeklyReportAutoSync.lastRunAt.slice(0, 19).replace('T', ' ') : '-' }}
+        </div>
+      </div>
+      <div class="flex items-center justify-between bg-gray-50 rounded px-2 py-1">
+        <div class="text-gray-700">
+          Статус: {{ weeklyReportAutoSync.status ?? '-' }}
+        </div>
+        <div class="text-gray-600">
+          {{ weeklyReportAutoSync.running ? 'проверяем...' : 'ожидание' }}
+        </div>
+      </div>
+      <div class="mt-1 text-gray-500">
+        Последняя синхронизация: {{ weeklyReportAutoSync.lastSyncAt ? weeklyReportAutoSync.lastSyncAt.slice(0, 19).replace('T', ' ') : '-' }}
+      </div>
+      <div v-if="weeklySyncMessage" class="mt-1" :class="weeklySyncMessageClass">
+        {{ weeklySyncMessage }}
+      </div>
+    </div>
+
     <!-- Загрузка отчетов о реализации -->
     <div class="mb-6 p-4 bg-gray-50 rounded">
       <h3 class="text-lg font-semibold mb-4">Загрузка отчетов о реализации</h3>
@@ -60,6 +165,23 @@
             :disabled="isReportSyncing"
           />
         </div>
+      </div>
+
+      <!-- Режим загрузки продаж -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-2">Режим загрузки продаж:</label>
+        <select
+          v-model="salesPeriodMode"
+          @change="saveSalesPeriodMode"
+          class="w-full md:w-64 border rounded px-3 py-2"
+          :disabled="isReportSyncing"
+        >
+          <option value="daily">Ежедневный (daily)</option>
+          <option value="weekly">Еженедельный (weekly)</option>
+        </select>
+        <p class="mt-1 text-xs text-gray-500">
+          Режим ежедневной загрузки получает данные по дням, еженедельный - по неделям
+        </p>
       </div>
 
       <div class="flex items-center gap-4">
@@ -89,6 +211,41 @@
       </div>
     </div>
 
+    <!-- Прогресс синхронизации по неделям -->
+    <div v-if="backfillProgress.isLoading" class="mb-6 p-4 bg-blue-50 rounded-lg text-sm border border-blue-200">
+      <div class="space-y-3">
+        <div class="font-semibold text-blue-900 text-base">
+          {{ backfillProgress.status }}
+        </div>
+
+        <div v-if="backfillProgress.progressInfo" class="space-y-2">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-blue-700">
+              Неделя: <span class="font-mono">{{ backfillProgress.progressInfo.currentWeek }}</span>
+            </span>
+            <span class="text-blue-600 font-medium">
+              {{ backfillProgress.progressInfo.current }} / {{ backfillProgress.progressInfo.total }}
+            </span>
+          </div>
+
+          <div class="w-full bg-blue-200 rounded-full h-3 overflow-hidden">
+            <div
+              class="bg-blue-600 h-3 rounded-full transition-all duration-300 flex items-center justify-end pr-2"
+              :style="{ width: backfillProgress.progressInfo.percentage + '%' }"
+            >
+              <span class="text-xs text-white font-medium">
+                {{ backfillProgress.progressInfo.percentage }}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="backfillProgress.error" class="text-xs text-red-600">
+          Ошибка: {{ backfillProgress.error }}
+        </div>
+      </div>
+    </div>
+
     <!-- Статус синхронизации -->
     <div v-if="store.isSyncing || store.isBackgroundSyncing" class="mb-4">
       <!-- Монитор логов синхронизации -->
@@ -106,7 +263,7 @@
       <div v-if="store.syncProgress" class="space-y-2">
         <div class="flex justify-between text-sm">
           <span>Неделя: {{ store.currentPeriod }}</span>
-          <span>{{ store.syncProgress.currentWeekIndex }} / {{ store.syncProgress.totalWeeks }}</span>
+          <span>{{ store.syncProgress?.currentWeekIndex }} / {{ store.syncProgress?.totalWeeks }}</span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-2">
           <div
@@ -116,19 +273,22 @@
         </div>
         <div class="text-sm text-gray-600 space-y-1">
           <div>Всего загружено записей: {{ store.totalLoaded }}</div>
-          <div v-if="store.syncProgress.currentWeekStatus" class="mt-2 p-2 bg-blue-50 rounded text-xs">
+          <div v-if="store.syncProgress?.currentWeekStatus" class="mt-2 p-2 bg-blue-50 rounded text-xs">
             <div class="font-medium mb-1">
-              Обработка недели: {{ store.syncProgress.currentWeekStatus.period }}
+              Обработка недели: {{ store.syncProgress?.currentWeekStatus?.period }}
             </div>
             <div class="space-y-0.5">
-              <div>Найдено строк: {{ store.syncProgress.currentWeekStatus.rawRecords }}</div>
-              <div v-if="store.syncProgress.currentWeekStatus.aggregatedRecords > 0">
-                После агрегации: {{ store.syncProgress.currentWeekStatus.aggregatedRecords }}
-                (продажи: {{ store.syncProgress.currentWeekStatus.salesCount }}, 
-                возвраты: {{ store.syncProgress.currentWeekStatus.returnsCount }})
+              <div>Найдено строк: {{ store.syncProgress?.currentWeekStatus?.rawRecords }}</div>
+              <div v-if="(store.syncProgress?.currentWeekStatus?.aggregatedRecords || 0) > 0">
+                После агрегации: {{ store.syncProgress?.currentWeekStatus?.aggregatedRecords }}
+                (продажи: {{ store.syncProgress?.currentWeekStatus?.salesCount }}, 
+                возвраты: {{ store.syncProgress?.currentWeekStatus?.returnsCount }})
               </div>
-              <div v-if="store.syncProgress.currentWeekStatus.salesCount > 0 || store.syncProgress.currentWeekStatus.returnsCount > 0" class="mt-1 font-semibold text-green-700">
-                Сохранено: {{ store.syncProgress.currentWeekStatus.salesCount }} продаж и {{ store.syncProgress.currentWeekStatus.returnsCount }} возвратов
+              <div
+                v-if="(store.syncProgress?.currentWeekStatus?.salesCount || 0) > 0 || (store.syncProgress?.currentWeekStatus?.returnsCount || 0) > 0"
+                class="mt-1 font-semibold text-green-700"
+              >
+                Сохранено: {{ store.syncProgress?.currentWeekStatus?.salesCount }} продаж и {{ store.syncProgress?.currentWeekStatus?.returnsCount }} возвратов
               </div>
             </div>
           </div>
@@ -213,11 +373,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 // TODO: Восстановить после реализации wbStore
 // import { useWbStore } from '@presentation/stores/wbStore'
-import DataHealthPanel from './DataHealthPanel.vue'
 import SyncLogMonitor from './SyncLogMonitor.vue'
+import { SyncButton, PnLDisplay } from './index'
 // TODO: Восстановить после реализации ReportSyncUseCase
 // import { ReportSyncUseCase } from '@application/use-cases/ReportSyncUseCase'
 // import { container } from '@core/di/container'
@@ -229,15 +389,41 @@ import { toastService } from '../services/ToastService'
 
 // TODO: Восстановить после реализации wbStore
 // const store = useWbStore()
-const store = {
+type SyncWeekStatus = {
+  period: string
+  rawRecords: number
+  aggregatedRecords: number
+  salesCount: number
+  returnsCount: number
+}
+
+type SyncProgress = {
+  currentWeekIndex: number
+  totalWeeks: number
+  currentWeekStatus?: SyncWeekStatus | null
+}
+
+type SyncStoreState = {
+  isSyncing: boolean
+  isBackgroundSyncing: boolean
+  syncProgress: SyncProgress | null
+  currentPeriod: string
+  totalLoaded: number
+  progressPercentage: number
+  adExpensesSyncing: boolean
+  abortSync: () => void
+}
+
+const store = reactive<SyncStoreState>({
   isSyncing: false,
   isBackgroundSyncing: false,
   syncProgress: null,
   currentPeriod: '',
   totalLoaded: 0,
   progressPercentage: 0,
+  adExpensesSyncing: false,
   abortSync: () => {},
-}
+})
 
 // TODO: Восстановить после реализации SettingsRepository
 // const settingsRepository = new SettingsRepository()
@@ -293,6 +479,8 @@ async function saveApiKey() {
 // Проверяем наличие API ключа при монтировании компонента
 onMounted(() => {
   checkApiKey()
+  // Загружаем сохраненный режим загрузки продаж
+  salesPeriodMode.value = getDefaultSalesPeriodMode()
 })
 
 // Состояние для загрузки отчетов
@@ -304,6 +492,19 @@ const getDefaultDateFrom = () => {
 
 const reportDateFrom = ref<string>(getDefaultDateFrom())
 const reportDateTo = ref<string>(new Date().toISOString().split('T')[0])
+
+// Режим загрузки продаж (daily/weekly)
+const getDefaultSalesPeriodMode = (): 'daily' | 'weekly' => {
+  const saved = localStorage.getItem('sales_period_mode')
+  return (saved === 'daily' || saved === 'weekly') ? saved : 'weekly'
+}
+
+const salesPeriodMode = ref<'daily' | 'weekly'>(getDefaultSalesPeriodMode())
+
+// Сохранение режима загрузки
+function saveSalesPeriodMode() {
+  localStorage.setItem('sales_period_mode', salesPeriodMode.value)
+}
 
 // Используем реактивные поля из financeFetcher
 const isReportSyncing = computed(() => financeFetcher.isFetching.value)
@@ -338,7 +539,7 @@ async function loadReports() {
     const totalLoaded = await syncManager.startFullSync(
       reportDateFrom.value,
       reportDateTo.value,
-      'weekly' // TODO: Добавить выбор периода в UI
+      salesPeriodMode.value
     )
 
     console.log('Загрузка завершена. Всего загружено записей:', totalLoaded)
@@ -361,6 +562,30 @@ async function loadReports() {
 
 // Финансовые настройки
 const analyticsStore = useAnalyticsStore()
+const backfillProgress = computed(() => analyticsStore.backfillProgress)
+const dataFreshness = computed(() => analyticsStore.dataFreshness)
+const weeklyReportReadiness = computed(() => analyticsStore.weeklyReportReadiness)
+const weeklyReportAutoSync = computed(() => analyticsStore.weeklyReportAutoSync)
+const weeklySyncMessage = computed(() => {
+  const status = weeklyReportAutoSync.value.status
+  const range = weeklyReportReadiness.value.range
+  const rangeLabel = range ? `${range.from} - ${range.to}` : '-'
+
+  if (status === 'synced') {
+    return `Неделя обновлена: ${rangeLabel}`
+  }
+  if (status === 'already-loaded') {
+    return `Неделя уже загружена: ${rangeLabel}`
+  }
+  return ''
+})
+const weeklySyncMessageClass = computed(() => {
+  const status = weeklyReportAutoSync.value.status
+  if (status === 'synced') {
+    return 'text-green-600'
+  }
+  return 'text-gray-600'
+})
 const taxInput = ref<number>(6)
 const isSavingTax = ref<boolean>(false)
 

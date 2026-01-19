@@ -62,6 +62,7 @@ export class FinanceFetcher {
       pv: item.retail_price || 0,
       pa: item.retail_amount || 0,
       pz: item.ppvz_for_pay || 0,
+      gi_id: item.gi_id,
     }
   }
 

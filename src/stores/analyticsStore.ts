@@ -1,7 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { db } from '../db/db'
-import type { ISale, IReturn, ILogistics, IPenalty, IDeduction, IAdvCost, IAcceptanceCost, IStorageCost, IProductOrder, IProductCard, IUnitCost, IWarehouseRemain } from '../types/db'
+import { ref, computed, watch } from 'vue'
+import type { ISale, IReturn, ILogistics, IPenalty, IAdvCost, IAcceptanceCost, IStorageCost, IProductOrder, IProductCard, IUnitCost, IWarehouseRemain, ISupply, ISupplyItem } from '../types/db'
+import type { DataLoadingService } from '../application/services/DataLoadingService'
+import type { ReportAggregationService } from '../application/services/ReportAggregationService'
+import type { SupplyService } from '../application/services/SupplyService'
+import type { ProductAggregate } from '../types/analytics'
+import { AggregationController } from '../application/controllers/AggregationController'
 
 /**
  * Store для аналитических данных
@@ -15,26 +19,94 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const returns = ref<IReturn[]>([])
   const logistics = ref<ILogistics[]>([])
   const penalties = ref<IPenalty[]>([])
-  const deductions = ref<IDeduction[]>([])
-  
-  // State: Данные из таблиц затрат
   const advCosts = ref<IAdvCost[]>([])
   const storageCosts = ref<IStorageCost[]>([])
   const acceptanceCosts = ref<IAcceptanceCost[]>([])
-  
-  // State: Данные из таблиц статистики
   const productOrders = ref<IProductOrder[]>([])
-  
+
   // State: Справочники (загружаются полностью)
   const productCards = ref<IProductCard[]>([])
   const unitCosts = ref<IUnitCost[]>([])
   const warehouseRemains = ref<IWarehouseRemain[]>([])
-  
+  const supplies = ref<ISupply[]>([])
+
   // State: Флаги загрузки
   const isInitialLoading = ref<boolean>(false)
   const isHistoryLoading = ref<boolean>(false)
   const isReady = ref<boolean>(false)
-  
+
+  // State: Прогресс загрузки истории (для синхронизации)
+  const backfillProgress = ref<{
+    isLoading: boolean
+    status: string
+    progressInfo: {
+      current: number
+      total: number
+      currentWeek: string
+      percentage: number
+      currentDataset?: string
+    } | null
+    result: {
+      totalWeeks: number
+      loadedWeeks: number
+      skippedWeeks: number
+      errors: Array<{ week: { from: string; to: string }; dataset: string; error: string }>
+      details: Array<{
+        week: { from: string; to: string }
+        datasets: Array<{ dataset: string; loaded: boolean; records?: number }>
+      }>
+    } | null
+    error: string | null
+  }>({
+    isLoading: false,
+    status: '',
+    progressInfo: null,
+    result: null,
+    error: null,
+  })
+
+  const dataFreshness = ref<{
+    updatedAt: string | null
+    items: Array<{
+      dataset: string
+      latestDate: string | null
+      missingFrom: string | null
+      missingTo: string | null
+    }>
+  }>({
+    updatedAt: null,
+    items: [],
+  })
+
+  const weeklyReportReadiness = ref<{
+    ready: boolean
+    checkedAt: string | null
+    range: { from: string; to: string } | null
+    reason: string | null
+  }>({
+    ready: false,
+    checkedAt: null,
+    range: null,
+    reason: null,
+  })
+
+  const weeklyReportAutoSync = ref<{
+    running: boolean
+    lastRunAt: string | null
+    lastSyncAt: string | null
+    status: string | null
+  }>({
+    running: false,
+    lastRunAt: null,
+    lastSyncAt: null,
+    status: null,
+  })
+
+  const startupLogs = ref<Array<{
+    at: string
+    level: 'info' | 'warn' | 'error'
+    message: string
+  }>>([])
   // State: Фильтры для агрегации
   const filters = ref<{
     dateFrom: string | null
@@ -47,6 +119,40 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   // State: Глобальная налоговая ставка
   const globalTaxRate = ref<number>(6)
 
+  // Тип для причин пересчёта агрегированного отчёта
+  type RecomputeReason =
+    | 'initial-ready'
+    | 'filters-changed'
+    | 'history-loaded'
+    | 'supplies-loaded'
+    | 'supply-cost-updated'
+    | 'thaw'
+    | 'manual'
+
+  // Сервисы (инициализируются через фабрику или provide/inject)
+  let dataLoadingService: DataLoadingService | null = null
+  let reportAggregationService: ReportAggregationService | null = null
+  let supplyService: SupplyService | null = null
+
+  // Инициализация сервисов (вызывается из App.vue или composable)
+  const initializeServices = (
+    dataLoader: DataLoadingService,
+    reportAggregator: ReportAggregationService,
+    supply: SupplyService
+  ) => {
+    dataLoadingService = dataLoader
+    reportAggregationService = reportAggregator
+    supplyService = supply
+  }
+
+  const addStartupLog = (entry: { level: 'info' | 'warn' | 'error'; message: string; at?: string }) => {
+    startupLogs.value.unshift({
+      at: entry.at ?? new Date().toISOString(),
+      level: entry.level,
+      message: entry.message,
+    })
+  }
+
   /**
    * Форматирует дату в формат YYYY-MM-DD
    */
@@ -55,11 +161,38 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   }
 
   /**
+   * Helper: проверяет, установлены ли фильтры дат
+   */
+  const hasFilters = (): boolean => {
+    return !!(filters.value.dateFrom && filters.value.dateTo)
+  }
+
+  /**
+   * Helper: фильтрует поставки с себестоимостью для логирования
+   */
+  const getSuppliesWithCosts = (suppliesList: ISupply[]) => {
+    return suppliesList
+      .map(supply => ({
+        supplyID: supply.supplyID,
+        itemsCount: supply.items.length,
+        itemsWithCost: supply.items.filter((item: ISupplyItem) => item.cost !== undefined && item.cost !== null).length,
+        items: supply.items
+          .filter((item: ISupplyItem) => item.cost !== undefined && item.cost !== null)
+          .map((item: ISupplyItem) => ({ nmID: item.nmID, techSize: item.techSize, cost: item.cost }))
+      }))
+      .filter(s => s.itemsWithCost > 0)
+  }
+
+  /**
    * Загружает все данные из БД с ступенчатой загрузкой:
    * 1. Приоритетная загрузка последнего месяца
    * 2. Фоновая загрузка данных за год (от года назад до месяца назад)
    */
   const loadAllDataFromDb = async () => {
+    if (!dataLoadingService) {
+      throw new Error('DataLoadingService not initialized')
+    }
+
     const now = new Date()
     const oneMonthAgo = new Date(now)
     oneMonthAgo.setDate(oneMonthAgo.getDate() - 30)
@@ -73,6 +206,14 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     console.log(`[AnalyticsStore] Начало загрузки данных`)
     console.log(`[AnalyticsStore] Период приоритетной загрузки: ${dateOneMonthAgo} - ${dateNow}`)
     console.log(`[AnalyticsStore] Период фоновой загрузки: ${dateOneYearAgo} - ${dateOneMonthAgo}`)
+    addStartupLog({
+      level: 'info',
+      message: `БД: приоритетная загрузка ${dateOneMonthAgo} - ${dateNow}`,
+    })
+    addStartupLog({
+      level: 'info',
+      message: `БД: фоновая загрузка ${dateOneYearAgo} - ${dateOneMonthAgo}`,
+    })
 
     // Этап 1: Приоритетная загрузка последнего месяца
     console.log('⏳ Начинаю загрузку первого месяца данных...')
@@ -80,72 +221,54 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     isInitialLoading.value = true
 
     try {
-      // Загружаем данные за последний месяц параллельно
-      const [
-        salesData,
-        returnsData,
-        logisticsData,
-        penaltiesData,
-        deductionsData,
-        advCostsData,
-        storageCostsData,
-        acceptanceCostsData,
-        productOrdersData,
-        productCardsData,
-        unitCostsData,
-      ] = await Promise.all([
-        // Финансовые таблицы
-        db.sales.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.returns.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.logistics.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.penalties.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.deductions.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        // Таблицы затрат
-        db.adv_costs.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.storage_costs.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        db.acceptance_costs.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        // Статистика заказов
-        db.product_orders.where('dt').between(dateOneMonthAgo, dateNow, true, true).toArray(),
-        // Справочники (загружаем полностью)
-        db.product_cards.toArray(),
-        db.unit_costs.toArray(),
-      ])
+      // Загружаем данные за последний месяц через сервис
+      const priorityData = await dataLoadingService.loadPriorityData(dateOneMonthAgo, dateNow)
+      const catalogData = await dataLoadingService.loadCatalogData()
 
       // Сохраняем данные в state
-      sales.value = salesData
-      returns.value = returnsData
-      logistics.value = logisticsData
-      penalties.value = penaltiesData
-      deductions.value = deductionsData
-      advCosts.value = advCostsData
-      storageCosts.value = storageCostsData
-      acceptanceCosts.value = acceptanceCostsData
-      productOrders.value = productOrdersData
-      productCards.value = productCardsData
-      unitCosts.value = unitCostsData
-      warehouseRemains.value = await db.warehouse_remains.toArray()
-
-      // Загружаем глобальную налоговую ставку из настроек
-      const taxSetting = await db.settings.get('global_tax')
-      if (taxSetting) {
-        globalTaxRate.value = parseFloat(taxSetting.value) || 6
+      sales.value = priorityData.sales
+      returns.value = priorityData.returns
+      logistics.value = priorityData.logistics
+      penalties.value = priorityData.penalties
+      advCosts.value = priorityData.advCosts
+      storageCosts.value = priorityData.storageCosts
+      acceptanceCosts.value = priorityData.acceptanceCosts
+      productOrders.value = priorityData.productOrders
+      productCards.value = catalogData.productCards
+      unitCosts.value = catalogData.unitCosts
+      warehouseRemains.value = catalogData.warehouseRemains
+      supplies.value = catalogData.supplies
+      
+      // Логируем поставки с себестоимостью при загрузке
+      const loadedSuppliesWithCosts = getSuppliesWithCosts(catalogData.supplies)
+      
+      console.log(`[AnalyticsStore] loadAllDataFromDb: загружено поставок=${catalogData.supplies.length}, с себестоимостью=${loadedSuppliesWithCosts.length}`)
+      if (loadedSuppliesWithCosts.length > 0) {
+        console.log(`[AnalyticsStore] loadAllDataFromDb: поставки с себестоимостью:`, loadedSuppliesWithCosts)
       }
+
+      // Загружаем глобальную налоговую ставку через сервис
+      globalTaxRate.value = await dataLoadingService.getGlobalTaxRate()
 
       isReady.value = true
       isInitialLoading.value = false
 
       const initialLoadTime = Date.now() - startTimeInitial
+      addStartupLog({
+        level: 'info',
+        message: `БД: приоритетная загрузка завершена (${initialLoadTime} мс)`,
+      })
       console.log(`[AnalyticsStore] ✅ Приоритетная загрузка завершена за ${initialLoadTime} мс`)
       console.log(`✅ Первый месяц загружен: ${sales.value.length} записей продаж в памяти.`)
-      console.log(`[AnalyticsStore]   - Продажи: ${salesData.length}`)
-      console.log(`[AnalyticsStore]   - Возвраты: ${returnsData.length}`)
-      console.log(`[AnalyticsStore]   - Логистика: ${logisticsData.length}`)
-      console.log(`[AnalyticsStore]   - Реклама: ${advCostsData.length}`)
-      console.log(`[AnalyticsStore]   - Хранение: ${storageCostsData.length}`)
-      console.log(`[AnalyticsStore]   - Приемка: ${acceptanceCostsData.length}`)
-      console.log(`[AnalyticsStore]   - Заказы: ${productOrdersData.length}`)
-      console.log(`[AnalyticsStore]   - Карточки товаров: ${productCardsData.length}`)
-      console.log(`[AnalyticsStore]   - Себестоимость: ${unitCostsData.length}`)
+      console.log(`[AnalyticsStore]   - Продажи: ${priorityData.sales.length}`)
+      console.log(`[AnalyticsStore]   - Возвраты: ${priorityData.returns.length}`)
+      console.log(`[AnalyticsStore]   - Логистика: ${priorityData.logistics.length}`)
+      console.log(`[AnalyticsStore]   - Реклама: ${priorityData.advCosts.length}`)
+      console.log(`[AnalyticsStore]   - Хранение: ${priorityData.storageCosts.length}`)
+      console.log(`[AnalyticsStore]   - Приемка: ${priorityData.acceptanceCosts.length}`)
+      console.log(`[AnalyticsStore]   - Заказы: ${priorityData.productOrders.length}`)
+      console.log(`[AnalyticsStore]   - Карточки товаров: ${catalogData.productCards.length}`)
+      console.log(`[AnalyticsStore]   - Себестоимость: ${catalogData.unitCosts.length}`)
 
       // Этап 2: Фоновая загрузка данных за год (от года назад до месяца назад)
       isHistoryLoading.value = true
@@ -166,57 +289,51 @@ export const useAnalyticsStore = defineStore('analytics', () => {
    * Фоновая загрузка исторических данных
    */
   const loadHistoryData = async (dateFrom: string, dateTo: string) => {
+    if (!dataLoadingService) {
+      throw new Error('DataLoadingService not initialized')
+    }
+
     console.log(`[AnalyticsStore] Начало фоновой загрузки истории: ${dateFrom} - ${dateTo}`)
     const startTimeHistory = Date.now()
+    addStartupLog({
+      level: 'info',
+      message: `БД: фоновая загрузка начата ${dateFrom} - ${dateTo}`,
+    })
 
     try {
-      // Загружаем исторические данные параллельно
-      const [
-        salesHistory,
-        returnsHistory,
-        logisticsHistory,
-        penaltiesHistory,
-        deductionsHistory,
-        advCostsHistory,
-        storageCostsHistory,
-        acceptanceCostsHistory,
-        productOrdersHistory,
-      ] = await Promise.all([
-        db.sales.where('dt').between(dateFrom, dateTo, true, false).toArray(), // false = не включая dateTo (так как эти данные уже загружены)
-        db.returns.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.logistics.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.penalties.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.deductions.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.adv_costs.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.storage_costs.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.acceptance_costs.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-        db.product_orders.where('dt').between(dateFrom, dateTo, true, false).toArray(),
-      ])
+      // Загружаем исторические данные через сервис
+      const historyData = await dataLoadingService.loadHistoryData(dateFrom, dateTo)
 
       // Добавляем исторические данные в существующие массивы
-      sales.value.push(...salesHistory)
-      returns.value.push(...returnsHistory)
-      logistics.value.push(...logisticsHistory)
-      penalties.value.push(...penaltiesHistory)
-      deductions.value.push(...deductionsHistory)
-      advCosts.value.push(...advCostsHistory)
-      storageCosts.value.push(...storageCostsHistory)
-      acceptanceCosts.value.push(...acceptanceCostsHistory)
-      productOrders.value.push(...productOrdersHistory)
+      sales.value.push(...historyData.sales)
+      returns.value.push(...historyData.returns)
+      logistics.value.push(...historyData.logistics)
+      penalties.value.push(...historyData.penalties)
+      advCosts.value.push(...historyData.advCosts)
+      storageCosts.value.push(...historyData.storageCosts)
+      acceptanceCosts.value.push(...historyData.acceptanceCosts)
+      productOrders.value.push(...historyData.productOrders)
 
       isHistoryLoading.value = false
+
+      // Автоматически обновляем агрегированный отчёт после загрузки истории
+      void requestAggregatedRecompute('history-loaded', { debounceMs: 300 })
 
       const historyLoadTime = Date.now() - startTimeHistory
       console.log(`[AnalyticsStore] ✅ Фоновая загрузка истории завершена за ${historyLoadTime} мс`)
       console.log(`🚀 История за год подгружена! Всего в памяти: ${sales.value.length} записей продаж.`)
-      console.log(`[AnalyticsStore]   - Продажи (добавлено): ${salesHistory.length}`)
-      console.log(`[AnalyticsStore]   - Возвраты (добавлено): ${returnsHistory.length}`)
-      console.log(`[AnalyticsStore]   - Логистика (добавлено): ${logisticsHistory.length}`)
-      console.log(`[AnalyticsStore]   - Реклама (добавлено): ${advCostsHistory.length}`)
-      console.log(`[AnalyticsStore]   - Хранение (добавлено): ${storageCostsHistory.length}`)
-      console.log(`[AnalyticsStore]   - Приемка (добавлено): ${acceptanceCostsHistory.length}`)
-      console.log(`[AnalyticsStore]   - Заказы (добавлено): ${productOrdersHistory.length}`)
+      console.log(`[AnalyticsStore]   - Продажи (добавлено): ${historyData.sales.length}`)
+      console.log(`[AnalyticsStore]   - Возвраты (добавлено): ${historyData.returns.length}`)
+      console.log(`[AnalyticsStore]   - Логистика (добавлено): ${historyData.logistics.length}`)
+      console.log(`[AnalyticsStore]   - Реклама (добавлено): ${historyData.advCosts.length}`)
+      console.log(`[AnalyticsStore]   - Хранение (добавлено): ${historyData.storageCosts.length}`)
+      console.log(`[AnalyticsStore]   - Приемка (добавлено): ${historyData.acceptanceCosts.length}`)
+      console.log(`[AnalyticsStore]   - Заказы (добавлено): ${historyData.productOrders.length}`)
       console.log(`[AnalyticsStore] Всего записей после загрузки истории: ${totalRecordsCount.value}`)
+      addStartupLog({
+        level: 'info',
+        message: `БД: фоновая загрузка завершена (${historyLoadTime} мс)`,
+      })
     } catch (error) {
       console.error('[AnalyticsStore] Ошибка при фоновой загрузке истории:', error)
       isHistoryLoading.value = false
@@ -233,7 +350,6 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       returns.value.length +
       logistics.value.length +
       penalties.value.length +
-      deductions.value.length +
       advCosts.value.length +
       storageCosts.value.length +
       acceptanceCosts.value.length +
@@ -244,448 +360,232 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     )
   })
 
+  // Кеш для агрегированного отчета
+  const aggregatedReportData = ref<ProductAggregate[]>([])
+
+  // Флаг успешного расчёта агрегированного отчёта
+  const hasAggregatedReportEverComputed = ref(false)
+
+  // Флаг реального выполнения пересчёта (не debounce/pending, а именно расчёт)
+  const isAggregating = ref(false)
+
+  // Токен для race-safety коммита результата
+  let latestRunId = 0
+
+  // Флаг для invalidateOnRequest (сохраняем для проверки в run)
+  let invalidateOnRequestEnabled = false
+
+  // Контроллер пересчёта агрегированного отчёта
+  const aggregationController = new AggregationController<RecomputeReason>(
+    // hasPrerequisites
+    () => {
+      return hasFilters() && reportAggregationService !== null
+    },
+    // onInvalidate
+    () => {
+      aggregatedReportData.value = []
+      hasAggregatedReportEverComputed.value = false
+    },
+    // run
+    async (reason: RecomputeReason, runId: number, canCommit: () => boolean) => {
+      if (!reportAggregationService) {
+        throw new Error('reportAggregationService is not initialized. Call initializeServices() first.')
+      }
+
+      // Используем runId из контроллера для race-safety
+      const myRunId = runId
+      // Запоминаем актуальный runId (старые runs не смогут коммитить)
+      // Если invalidateOnRequest=false, обновляем здесь (в начале run)
+      // Если invalidateOnRequest=true, latestRunId уже обновлён в onRunScheduled
+      if (!invalidateOnRequestEnabled) {
+        latestRunId = runId
+      }
+
+      console.log(`[AnalyticsStore] refreshAggregatedReport triggered`, reason)
+      console.log(`[AnalyticsStore] aggregatedReport: начало расчета, supplies.value.length=${supplies.value.length}`)
+
+      // Устанавливаем флаг реального пересчёта непосредственно перед вызовом aggregateReport
+      isAggregating.value = true
+
+      try {
+        const report = await reportAggregationService.aggregateReport({
+          dateFrom: filters.value.dateFrom!,
+          dateTo: filters.value.dateTo!,
+          globalTaxRate: globalTaxRate.value,
+        })
+
+        // КОММИТ ТОЛЬКО ЕСЛИ АКТУАЛЬНО (race-safety: проверка runId перед коммитом)
+        if (myRunId !== latestRunId) {
+          console.log(`[AnalyticsStore] aggregatedReport: пропущен коммит (runId ${myRunId} устарел, текущий ${latestRunId})`)
+          return
+        }
+
+        // Проверка canCommit (учитывает freezeBehavior="block-commit")
+        if (!canCommit()) {
+          console.log(`[AnalyticsStore] aggregatedReport: пропущен коммит (freezeBehavior="block-commit" и контроллер заморожен)`)
+          return
+        }
+
+        console.log(`[AnalyticsStore] aggregatedReport: расчет завершен, результат содержит ${report.length} товаров`)
+        aggregatedReportData.value = report
+        hasAggregatedReportEverComputed.value = true
+      } catch (error) {
+        console.error('[AnalyticsStore] Ошибка при агрегации отчета:', error)
+
+        // если уже устарел — не трогаем стор и НЕ бросаем ошибку дальше
+        if (myRunId !== latestRunId) {
+          return
+        }
+
+        aggregatedReportData.value = []
+        hasAggregatedReportEverComputed.value = false
+        throw error
+      } finally {
+        // Сбрасываем флаг реального пересчёта только для актуального run
+        if (myRunId === latestRunId) {
+          isAggregating.value = false
+        }
+      }
+    },
+    // onRunScheduled (для invalidateOnRequest=true)
+    (runId: number) => {
+      // Немедленно обновляем latestRunId при новом request (до debounce)
+      latestRunId = runId
+    },
+    // onBatchCompleted
+    (reasons: RecomputeReason[]) => {
+      console.log('[AnalyticsStore] recompute batch completed', reasons)
+    },
+    // options
+    {
+      freezeBehavior: 'block-new-only', // Можно изменить на 'block-commit' при необходимости
+      invalidateOnRequest: false, // Можно включить для мгновенной инвалидации
+    }
+  )
+
+  // Сохраняем флаг invalidateOnRequest для проверки в run
+  invalidateOnRequestEnabled = aggregationController.invalidateOnRequest
+
   /**
    * Геттер: агрегированный отчет по товарам за выбранный период (иерархия: Артикул -> Размеры)
    */
   const aggregatedReport = computed(() => {
-    const dateFrom = filters.value.dateFrom
-    const dateTo = filters.value.dateTo
-
-    // Если фильтры не установлены, возвращаем пустой массив
-    if (!dateFrom || !dateTo) {
+    if (!hasFilters()) {
       return []
     }
 
-    // Фильтруем данные по периоду
-    const filteredSales = sales.value.filter(sale => {
-      return sale.dt >= dateFrom && sale.dt <= dateTo
-    })
-
-    const filteredReturns = returns.value.filter(ret => {
-      return ret.dt >= dateFrom && ret.dt <= dateTo
-    })
-
-    const filteredOrders = productOrders.value.filter(order => {
-      return order.dt >= dateFrom && order.dt <= dateTo
-    })
-
-    const filteredLogistics = logistics.value.filter(log => {
-      return log.dt >= dateFrom && log.dt <= dateTo
-    })
-
-    const filteredAdvCosts = advCosts.value.filter(adv => {
-      return adv.dt >= dateFrom && adv.dt <= dateTo
-    })
-
-    const filteredPenalties = penalties.value.filter(penalty => {
-      return penalty.dt >= dateFrom && penalty.dt <= dateTo
-    })
-
-    const filteredStorageCosts = storageCosts.value.filter(storage => {
-      return storage.dt >= dateFrom && storage.dt <= dateTo
-    })
-
-    // Создаем Map для агрегации по nmId -> size
-    type SizeAggregate = {
-      sz: string
-      ordersCount: number
-      ordersSum: number
-      salesCount: number
-      returnsCount: number
-      deliveryCount: number
-      cancelCount: number
-      revenue: number // реализация до СПП (retail_price)
-      revenueAfterSpp: number // после СПП (retail_amount продаж - retail_amount возвратов)
-      sellerAmount: number // к перечислению (равно revenueAfterSpp)
-      returnsRevenue: number // сумма возвратов (retail_price из returns)
-      returnsPa: number // сумма возвратов retail_amount (для реализации после СПП)
-      netSalesCount: number // чистые продажи (salesCount - returnsCount)
-      netRevenue: number // чистая реализация (revenue - returnsRevenue)
-      buyoutPercent: number // процент выкупа (netSalesCount / deliveryCount * 100)
-      sppAmount: number // сумма СПП (revenueBeforeSpp - revenueAfterSpp)
-      sppPercent: number // процент СПП (sppAmount / revenueBeforeSpp * 100)
-      salesPz: number // сумма pz (ppvz_for_pay) из продаж
-      returnsPz: number // сумма pz (ppvz_for_pay) из возвратов
-      transferAmount: number // перечисления (pz продаж - pz возвратов)
-      commissionAmount: number // комиссия WB (revenueBeforeSpp - transferAmount)
-      commissionPercent: number // процент комиссии (commissionAmount / revenueBeforeSpp * 100)
-      logisticsCosts: number
-      storageCost: number // затраты на хранение
-      drrSales: number // ДРР по продажам (для размеров всегда 0, реклама только на уровне артикула)
-      drrOrders: number // ДРР по заказам (для размеров всегда 0, реклама только на уровне артикула)
-      drrOrdersForecast: number // ДРР прогнозный (для размеров всегда 0, реклама только на уровне артикула)
-      unitCosts: number
-      taxes: number
-    }
-
-    type ProductAggregate = {
-      ni: number
-      // Данные из productCards
-      title: string
-      img: string
-      bc: string
-      sa: string
-      sj: string
-      // Агрегированные данные по размерам
-      sizes: SizeAggregate[]
-      // Итоги на уровне артикула
-      ordersCount: number
-      ordersSum: number
-      salesCount: number
-      returnsCount: number
-      deliveryCount: number
-      cancelCount: number
-      revenue: number
-      revenueAfterSpp: number
-      sellerAmount: number
-      returnsRevenue: number // сумма возвратов (retail_price из returns)
-      returnsPa: number // сумма возвратов retail_amount (для реализации после СПП)
-      netSalesCount: number // чистые продажи (salesCount - returnsCount)
-      netRevenue: number // чистая реализация (revenue - returnsRevenue)
-      buyoutPercent: number // процент выкупа (netSalesCount / deliveryCount * 100)
-      sppAmount: number // сумма СПП (revenueBeforeSpp - revenueAfterSpp)
-      sppPercent: number // процент СПП (sppAmount / revenueBeforeSpp * 100)
-      salesPz: number // сумма pz (ppvz_for_pay) из продаж
-      returnsPz: number // сумма pz (ppvz_for_pay) из возвратов
-      transferAmount: number // перечисления (pz продаж - pz возвратов)
-      commissionAmount: number // комиссия WB (revenueBeforeSpp - transferAmount)
-      commissionPercent: number // процент комиссии (commissionAmount / revenueBeforeSpp * 100)
-      advCosts: number
-      logisticsCosts: number
-      storageCost: number // затраты на хранение
-      drrSales: number // ДРР по продажам (advCosts / netRevenue * 100)
-      drrOrders: number // ДРР по заказам (advCosts / ordersSum * 100)
-      drrOrdersForecast: number // ДРР прогнозный (advCosts / (ordersSum * buyoutPercent / 100) * 100)
-      penaltiesCosts: number
-      unitCosts: number
-      taxes: number
-      stocks: number
-    }
-
-    const productsMap = new Map<number, ProductAggregate>()
-    const sizesMap = new Map<string, SizeAggregate>()
-
-    // Функция для получения или создания агрегата размера
-    const getOrCreateSize = (ni: number, sz: string): SizeAggregate => {
-      const key = `${ni}_${sz}`
-      if (!sizesMap.has(key)) {
-        sizesMap.set(key, {
-          sz,
-          ordersCount: 0,
-          ordersSum: 0,
-          salesCount: 0,
-          returnsCount: 0,
-          deliveryCount: 0,
-          cancelCount: 0,
-          revenue: 0,
-          revenueAfterSpp: 0,
-          sellerAmount: 0,
-          returnsRevenue: 0,
-          returnsPa: 0,
-          netSalesCount: 0,
-          netRevenue: 0,
-          buyoutPercent: 0,
-          sppAmount: 0,
-          sppPercent: 0,
-          salesPz: 0,
-          returnsPz: 0,
-          transferAmount: 0,
-          commissionAmount: 0,
-          commissionPercent: 0,
-          logisticsCosts: 0,
-          storageCost: 0,
-          drrSales: 0,
-          drrOrders: 0,
-          drrOrdersForecast: 0,
-          unitCosts: 0,
-          taxes: 0,
-        })
-      }
-      return sizesMap.get(key)!
-    }
-
-    // Функция для получения или создания агрегата артикула
-    const getOrCreateProduct = (ni: number, bc?: string, sa?: string, sj?: string): ProductAggregate => {
-      if (!productsMap.has(ni)) {
-        productsMap.set(ni, {
-          ni,
-          title: '',
-          img: '',
-          bc: bc || '',
-          sa: sa || '',
-          sj: sj || '',
-          sizes: [],
-          ordersCount: 0,
-          ordersSum: 0,
-          salesCount: 0,
-          returnsCount: 0,
-          deliveryCount: 0,
-          cancelCount: 0,
-          revenue: 0,
-          revenueAfterSpp: 0,
-          sellerAmount: 0,
-          returnsRevenue: 0,
-          returnsPa: 0,
-          netSalesCount: 0,
-          netRevenue: 0,
-          buyoutPercent: 0,
-          sppAmount: 0,
-          sppPercent: 0,
-          salesPz: 0,
-          returnsPz: 0,
-          transferAmount: 0,
-          commissionAmount: 0,
-          commissionPercent: 0,
-          advCosts: 0,
-          logisticsCosts: 0,
-          storageCost: 0,
-          drrSales: 0,
-          drrOrders: 0,
-          drrOrdersForecast: 0,
-          penaltiesCosts: 0,
-          unitCosts: 0,
-          taxes: 0,
-          stocks: 0,
-        })
-      }
-      return productsMap.get(ni)!
-    }
-
-    // Агрегируем продажи (sales) - распределяем по размерам
-    for (const sale of filteredSales) {
-      const product = getOrCreateProduct(sale.ni, sale.bc, sale.sa, sale.sj)
-      const revenue = sale.pv || 0 // retail_price (для реализации до СПП)
-      const revenueAfterSpp = sale.pa || 0 // retail_amount (для реализации после СПП)
-      const pz = sale.pz || 0 // ppvz_for_pay (для перечислений)
-      const quantity = sale.qt || 0
-
-      product.revenue += revenue
-      product.revenueAfterSpp += revenueAfterSpp
-      product.salesPz += pz
-      product.salesCount += quantity
-
-      // Если есть размер, агрегируем по размеру
-      if (sale.sz) {
-        const size = getOrCreateSize(sale.ni, sale.sz)
-        size.revenue += revenue
-        size.revenueAfterSpp += revenueAfterSpp
-        size.salesPz += pz
-        size.salesCount += quantity
-      }
-    }
-
-    // Агрегируем возвраты (returns) - распределяем по размерам
-    for (const ret of filteredReturns) {
-      const product = getOrCreateProduct(ret.ni, ret.bc, ret.sa, ret.sj)
-      const quantity = ret.qt || 0
-      const revenue = ret.pv || 0 // retail_price из возвратов (для реализации до СПП)
-      const revenuePa = ret.pa || 0 // retail_amount из возвратов (для реализации после СПП)
-      const pz = ret.pz || 0 // ppvz_for_pay из возвратов (перечисления возвратов)
-
-      product.returnsCount += quantity
-      product.returnsRevenue += revenue
-      product.returnsPa += revenuePa
-      product.returnsPz += pz
-
-      // Если есть размер, агрегируем по размеру
-      if (ret.sz) {
-        const size = getOrCreateSize(ret.ni, ret.sz)
-        size.returnsCount += quantity
-        size.returnsRevenue += revenue
-        size.returnsPa += revenuePa
-        size.returnsPz += pz
-      }
-    }
-
-    // Агрегируем логистику - распределяем по размерам
-    for (const log of filteredLogistics) {
-      const product = getOrCreateProduct(log.ni, log.bc, log.sa, log.sj)
-      const logisticsCost = log.dr || 0 // delivery_rub
-      const deliveryAmount = log.dl || 0 // delivery_amount (количество доставок)
-
-      product.logisticsCosts += logisticsCost
-      product.deliveryCount += deliveryAmount // суммируем количество доставок
-      product.cancelCount += (log.rt || 0) > 0 ? 1 : 0 // return_amount
-
-      // Если есть размер, агрегируем по размеру
-      if (log.sz) {
-        const size = getOrCreateSize(log.ni, log.sz)
-        size.logisticsCosts += logisticsCost
-        size.deliveryCount += deliveryAmount // суммируем количество доставок
-        size.cancelCount += (log.rt || 0) > 0 ? 1 : 0
-      }
-    }
-
-    // Агрегируем заказы (product_orders) - только на уровне артикула (нет размера в product_orders)
-    for (const order of filteredOrders) {
-      const product = getOrCreateProduct(order.ni, order.bc, undefined, order.sj)
-      product.ordersCount += order.oc || 0 // orderCount
-      product.ordersSum += order.os || 0 // orderSum
-    }
-
-    // Агрегируем рекламу (adv_costs) - только на уровне артикула
-    for (const adv of filteredAdvCosts) {
-      const product = getOrCreateProduct(adv.ni)
-      product.advCosts += adv.costs || 0
-    }
-
-    // Агрегируем штрафы (penalties) - только на уровне артикула
-    for (const penalty of filteredPenalties) {
-      const product = getOrCreateProduct(penalty.ni, penalty.bc, penalty.sa, penalty.sj)
-      product.penaltiesCosts += penalty.pn || 0
-    }
-
-    // Агрегируем хранение (storage) - распределяем по размерам
-    for (const storage of filteredStorageCosts) {
-      const product = getOrCreateProduct(storage.ni, storage.bc, storage.sa, storage.sj)
-      const cost = storage.sc || 0
-      product.storageCost += cost
-
-      // Если есть размер, агрегируем по размеру
-      if (storage.sz) {
-        const size = getOrCreateSize(storage.ni, storage.sz)
-        size.storageCost += cost
-      }
-    }
-
-    // Добавляем остатки на складах (stocks) - только на уровне артикула
-    for (const remain of warehouseRemains.value) {
-      const product = getOrCreateProduct(remain.ni, remain.bc, remain.sa, remain.sj)
-      product.stocks += remain.q_wh || 0
-    }
-
-    // Считаем себестоимость и налоги для каждого размера и артикула
-    const unitCostsMap = new Map<number, { cost: number; taxRate: number }>()
-    for (const unitCost of unitCosts.value) {
-      unitCostsMap.set(unitCost.ni, {
-        cost: unitCost.cost,
-        taxRate: unitCost.taxRate || 0,
-      })
-    }
-
-    // Соединяем с productCards для получения фото и названия
-    const productCardsMap = new Map<number, IProductCard>()
-    for (const card of productCards.value) {
-      if (!productCardsMap.has(card.ni)) {
-        productCardsMap.set(card.ni, card)
-      }
-    }
-
-    // Обогащаем данные из productCards и считаем себестоимость/налоги
-    for (const [ni, product] of productsMap.entries()) {
-      const card = productCardsMap.get(ni)
-      if (card) {
-        product.title = card.title || ''
-        product.img = card.img || ''
-        if (!product.bc) product.bc = card.bc || ''
-        if (!product.sa) product.sa = card.sa || ''
-        if (!product.sj) product.sj = card.sj || ''
-      }
-
-      const unitCostData = unitCostsMap.get(ni)
-      // Используем налоговую ставку из unitCosts, если указана, иначе глобальную ставку
-      const taxRate = unitCostData?.taxRate || globalTaxRate.value
-      const unitCost = unitCostData?.cost || 0
-
-      // Собираем размеры для этого артикула и фильтруем только активные
-      const productSizes: SizeAggregate[] = []
-      for (const [key, size] of sizesMap.entries()) {
-        if (key.startsWith(`${ni}_`)) {
-          // Считаем себестоимость для размера
-          size.unitCosts = size.salesCount * unitCost
-          
-          // Вычисляем чистые показатели
-          size.netSalesCount = size.salesCount - size.returnsCount
-          size.netRevenue = size.revenue - size.returnsRevenue // Реализация до СПП
-          // Реализация после СПП = retail_amount продаж - retail_amount возвратов
-          size.revenueAfterSpp = size.revenueAfterSpp - size.returnsPa
-          size.sellerAmount = size.revenueAfterSpp // к перечислению = реализации после СПП
-          
-          // Считаем налоги для размера (от реализации после СПП)
-          size.taxes = size.revenueAfterSpp * (taxRate / 100)
-          // Вычисляем процент выкупа
-          size.buyoutPercent = size.deliveryCount > 0 ? (size.netSalesCount / size.deliveryCount) * 100 : 0
-          // Вычисляем СПП: revenueBeforeSpp (netRevenue) - revenueAfterSpp
-          const revenueBeforeSpp = size.netRevenue // Реализация до СПП (revenue - returnsRevenue)
-          size.sppAmount = revenueBeforeSpp - size.revenueAfterSpp
-          size.sppPercent = revenueBeforeSpp > 0 ? (size.sppAmount / revenueBeforeSpp) * 100 : 0
-          // Перечисления = перечисления продаж - перечисления возвратов (pz продаж - pz возвратов)
-          size.transferAmount = size.salesPz - size.returnsPz
-          // Комиссия WB = реализация до СПП - перечисления
-          size.commissionAmount = revenueBeforeSpp - size.transferAmount
-          size.commissionPercent = revenueBeforeSpp > 0 ? (size.commissionAmount / revenueBeforeSpp) * 100 : 0
-          // ДРР не считается для размеров (реклама только на уровне артикула)
-          size.drrSales = 0
-          size.drrOrders = 0
-          size.drrOrdersForecast = 0
-          
-          // Фильтруем размеры: оставляем только те, где есть активность
-          if (size.ordersCount > 0 || size.salesCount > 0 || size.deliveryCount > 0 || size.revenue > 0) {
-            productSizes.push(size)
-          }
-        }
-      }
-
-      // Сортируем размеры
-      productSizes.sort((a, b) => a.sz.localeCompare(b.sz))
-      product.sizes = productSizes
-
-      // Считаем итоги на уровне артикула (суммируем из размеров, кроме advCosts и penaltiesCosts)
-      product.ordersCount = product.ordersCount // уже посчитано из product_orders
-      product.ordersSum = product.ordersSum // уже посчитано из product_orders
-      product.salesCount = product.salesCount // уже посчитано из sales
-      product.returnsCount = product.returnsCount // уже посчитано из returns
-      product.deliveryCount = product.deliveryCount // уже посчитано из logistics
-      product.cancelCount = product.cancelCount // уже посчитано из logistics
-      product.revenue = product.revenue // уже посчитано из sales
-      product.returnsRevenue = product.returnsRevenue // уже посчитано из returns
-      
-      // Вычисляем чистые показатели
-      product.netSalesCount = product.salesCount - product.returnsCount
-      product.netRevenue = product.revenue - product.returnsRevenue // Реализация до СПП
-      // Реализация после СПП = retail_amount продаж - retail_amount возвратов
-      product.revenueAfterSpp = product.revenueAfterSpp - product.returnsPa
-      product.sellerAmount = product.revenueAfterSpp // к перечислению = реализации после СПП
-      // Вычисляем процент выкупа
-      product.buyoutPercent = product.deliveryCount > 0 ? (product.netSalesCount / product.deliveryCount) * 100 : 0
-      // Вычисляем СПП: revenueBeforeSpp (netRevenue) - revenueAfterSpp
-      const revenueBeforeSpp = product.netRevenue // Реализация до СПП (revenue - returnsRevenue)
-      product.sppAmount = revenueBeforeSpp - product.revenueAfterSpp
-      product.sppPercent = revenueBeforeSpp > 0 ? (product.sppAmount / revenueBeforeSpp) * 100 : 0
-      // Перечисления = перечисления продаж - перечисления возвратов (pz продаж - pz возвратов)
-      product.transferAmount = product.salesPz - product.returnsPz
-      // Комиссия WB = реализация до СПП - перечисления
-      product.commissionAmount = revenueBeforeSpp - product.transferAmount
-      product.commissionPercent = revenueBeforeSpp > 0 ? (product.commissionAmount / revenueBeforeSpp) * 100 : 0
-      // ДРР по продажам: (advCosts / netRevenue) * 100
-      product.drrSales = revenueBeforeSpp > 0 ? (product.advCosts / revenueBeforeSpp) * 100 : 0
-      // ДРР по заказам: (advCosts / ordersSum) * 100
-      product.drrOrders = product.ordersSum > 0 ? (product.advCosts / product.ordersSum) * 100 : 0
-      // ДРР прогнозный: (advCosts / (ordersSum * buyoutPercent / 100)) * 100
-      const predictedRevenue = product.ordersSum > 0 && product.buyoutPercent > 0 
-        ? product.ordersSum * (product.buyoutPercent / 100)
-        : 0
-      product.drrOrdersForecast = predictedRevenue > 0 ? (product.advCosts / predictedRevenue) * 100 : 0
-      
-      product.logisticsCosts = product.logisticsCosts // уже посчитано из logistics
-      product.advCosts = product.advCosts // уже посчитано из adv_costs
-      product.penaltiesCosts = product.penaltiesCosts // уже посчитано из penalties
-      product.unitCosts = product.salesCount * unitCost
-      // Считаем налоги для продукта (от реализации после СПП)
-      product.taxes = product.revenueAfterSpp * (taxRate / 100)
-    }
-
-    // Фильтруем товары: оставляем только те, где есть активность
-    // Активность = хотя бы один из показателей > 0
-    const filteredProducts = Array.from(productsMap.values()).filter(product => {
-      return product.ordersCount > 0 || 
-             product.salesCount > 0 || 
-             product.deliveryCount > 0 || 
-             product.revenue > 0
-    })
-
-    return filteredProducts
+    return aggregatedReportData.value
   })
+
+  /**
+   * Computed: сумма расходов на хранение за период
+   */
+  const storageCostsSumByRange = computed(() => {
+    if (!hasFilters()) {
+      return 0
+    }
+
+    const dateFrom = filters.value.dateFrom!
+    const dateTo = filters.value.dateTo!
+    return storageCosts.value.reduce((sum, storage) => {
+      if (storage.dt >= dateFrom && storage.dt <= dateTo) {
+        return sum + (storage.sc || 0)
+      }
+      return sum
+    }, 0)
+  })
+
+  /**
+   * Computed: сумма расходов на приемку за период
+   */
+  const acceptanceCostsSumByRange = computed(() => {
+    if (!hasFilters()) {
+      return 0
+    }
+
+    const dateFrom = filters.value.dateFrom!
+    const dateTo = filters.value.dateTo!
+    return acceptanceCosts.value.reduce((sum, acceptance) => {
+      if (acceptance.dt >= dateFrom && acceptance.dt <= dateTo) {
+        return sum + (acceptance.costs || 0)
+      }
+      return sum
+    }, 0)
+  })
+
+  /**
+   * Computed: флаг "грязности" агрегированного отчёта
+   * Возвращает true, если есть ожидающие причины пересчёта или отчёт ещё не был рассчитан
+   */
+  const isAggregatedReportDirty = computed(() => {
+    if (!hasFilters()) {
+      return false
+    }
+    return aggregationController.getPending().length > 0 || !hasAggregatedReportEverComputed.value
+  })
+
+  /**
+   * Computed: флаг обновления агрегированного отчёта
+   * Возвращает true, если есть ожидающие причины пересчёта и отчёт не заморожен
+   */
+  const isAggregatedReportUpdating = computed(() => {
+    if (!hasFilters()) {
+      return false
+    }
+    return aggregationController.getPending().length > 0 && !aggregationController.getFrozen()
+  })
+
+  /**
+   * Замораживает пересчёт агрегированного отчёта
+   * В замороженном состоянии причины накапливаются, но пересчёт не выполняется
+   */
+  const freezeAggregatedRecompute = () => {
+    aggregationController.freeze()
+  }
+
+  /**
+   * Размораживает пересчёт агрегированного отчёта
+   * Если есть накопленные причины, выполняет пересчёт
+   */
+  const thawAggregatedRecompute = () => {
+    aggregationController.thaw()
+  }
+
+  /**
+   * Принудительно запускает пересчёт агрегированного отчёта
+   * Используется для ручного обновления из UI
+   */
+  const forceRecomputeAggregatedReport = () => {
+    void aggregationController.request('manual', { debounceMs: 0 })
+  }
+
+  /**
+   * Запрашивает пересчёт агрегированного отчёта
+   * @param reason Причина пересчёта
+   * @param opts Опции для обновления (debounce в миллисекундах)
+   */
+  const requestAggregatedRecompute = async (reason: RecomputeReason, opts?: { debounceMs?: number }) => {
+    await aggregationController.request(reason, opts)
+  }
+
+  // Watcher для обновления агрегированного отчета при изменении фильтров
+  watch(
+    () => [isReady.value, filters.value.dateFrom, filters.value.dateTo, globalTaxRate.value] as const,
+    ([isReady], prevVal) => {
+      if (!isReady) {
+        return
+      }
+      const prevIsReady = prevVal?.[0]
+      // Если isReady стал true (был false, стал true), обновляем без debounce
+      if (prevIsReady === false && isReady === true) {
+        void requestAggregatedRecompute('initial-ready', { debounceMs: 0 })
+        return
+      }
+      // Иначе используем обычный debounce
+      void requestAggregatedRecompute('filters-changed', { debounceMs: 200 })
+    },
+    { immediate: true }
+  )
 
   /**
    * Геттер: общие итоги за выбранный период (использует aggregatedReport для расчета)
@@ -733,8 +633,11 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         acc.totalOrdersSum += product.ordersSum
         acc.totalDeliveryCount += product.deliveryCount
         acc.totalCancelCount += product.cancelCount
-        acc.totalReturnsCount += product.returnsCount
-        acc.totalSalesCount += product.salesCount
+        // Вычисляем salesCount и returnsCount из sizes, так как они не в интерфейсе ProductAggregate
+        const productSalesCount = product.sizes.reduce((sum, size) => sum + size.salesCount, 0)
+        const productReturnsCount = product.sizes.reduce((sum, size) => sum + size.returnsCount, 0)
+        acc.totalReturnsCount += productReturnsCount
+        acc.totalSalesCount += productSalesCount
         acc.totalNetSalesCount += product.netSalesCount
         acc.totalRevenue += product.revenue
         acc.totalNetRevenue += product.netRevenue
@@ -744,11 +647,11 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         acc.totalTransferAmount += product.transferAmount
         acc.totalCommissionAmount += product.commissionAmount
         acc.totalLogistics += product.logisticsCosts
-        acc.totalStorageCosts += product.storageCost
         acc.totalAdvCosts += product.advCosts
         acc.totalPenaltiesCosts += product.penaltiesCosts
         acc.totalUnitCosts += product.unitCosts
         acc.totalTaxes += product.taxes
+        acc.totalProfit += product.profit
         return acc
       },
       {
@@ -783,22 +686,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       }
     )
 
-    // Добавляем затраты на хранение и приемку (они не включены в aggregatedReport)
-    const dateFrom = filters.value.dateFrom
-    const dateTo = filters.value.dateTo
-
-    if (dateFrom && dateTo) {
-      const filteredStorageCosts = storageCosts.value.filter(storage => {
-        return storage.dt >= dateFrom && storage.dt <= dateTo
-      })
-
-      const filteredAcceptanceCosts = acceptanceCosts.value.filter(acceptance => {
-        return acceptance.dt >= dateFrom && acceptance.dt <= dateTo
-      })
-
-      totals.totalStorageCosts = filteredStorageCosts.reduce((sum, storage) => sum + (storage.sc || 0), 0)
-      totals.totalAcceptanceCosts = filteredAcceptanceCosts.reduce((sum, acceptance) => sum + (acceptance.costs || 0), 0)
-    }
+    // Используем computed для затрат на хранение и приемку
+    totals.totalStorageCosts = storageCostsSumByRange.value
+    totals.totalAcceptanceCosts = acceptanceCostsSumByRange.value
 
     // Вычисляем средний процент выкупа по всему магазину
     totals.totalBuyoutPercent = totals.totalDeliveryCount > 0 
@@ -833,16 +723,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       ? (totals.totalAdvCosts / totalPredictedRevenue) * 100
       : 0
 
-    // Формула прибыли: Выручка после СПП - Логистика - Реклама - Штрафы - Хранение - Приемка - Себестоимость - Налоги
-    totals.totalProfit =
-      totals.totalRevenueAfterSpp -
-      totals.totalLogistics -
-      totals.totalAdvCosts -
-      totals.totalPenaltiesCosts -
-      totals.totalStorageCosts -
-      totals.totalAcceptanceCosts -
-      totals.totalUnitCosts -
-      totals.totalTaxes
+    // Формула прибыли: Перечисления - Логистика - Хранение - Реклама - Налог - Себестоимость
+    // Примечание: totalProfit уже суммируется из product.profit в reduce выше
+    // Это обеспечивает согласованность с расчетом на уровне продуктов/размеров
 
     return totals
   })
@@ -856,11 +739,138 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   }
 
   /**
+   * Загружает поставки из API и сохраняет их в БД
+   * @param dateFrom Начальная дата (YYYY-MM-DD)
+   * @param dateTo Конечная дата (YYYY-MM-DD)
+   */
+  const loadSupplies = async (dateFrom: string, dateTo: string) => {
+    if (!supplyService) {
+      throw new Error('SupplyService not initialized')
+    }
+    const count = await supplyService.loadSuppliesFromApi(dateFrom, dateTo)
+    
+    // Перезагружаем поставки в стор после синхронизации
+    const allSupplies = await supplyService.getAllSupplies()
+    supplies.value = allSupplies
+    
+    // Автоматически обновляем агрегированный отчёт после изменения поставок
+    void requestAggregatedRecompute('supplies-loaded', { debounceMs: 300 })
+    
+    // Логируем поставки с себестоимостью после перезагрузки
+    const reloadedSuppliesWithCosts = getSuppliesWithCosts(allSupplies)
+    
+    console.log(`[AnalyticsStore] loadSupplies: после синхронизации загружено поставок=${allSupplies.length}, с себестоимостью=${reloadedSuppliesWithCosts.length}`)
+    if (reloadedSuppliesWithCosts.length > 0) {
+      console.log(`[AnalyticsStore] loadSupplies: поставки с себестоимостью:`, reloadedSuppliesWithCosts)
+    }
+    
+    return count
+  }
+
+  /**
+   * Получает все поставки, отсортированные по дате приемки (от новых к старым)
+   * @returns Promise с массивом поставок
+   */
+  const getAllSupplies = async (): Promise<ISupply[]> => {
+    if (!supplyService) {
+      throw new Error('SupplyService not initialized')
+    }
+    return supplyService.getAllSupplies()
+  }
+
+  /**
+   * Получает поставки по артикулу WB
+   * @param nmId Артикул WB
+   * @returns Массив поставок, содержащих данный артикул
+   */
+  const getSupplyByNmId = async (nmId: number): Promise<ISupply[]> => {
+    if (!supplyService) {
+      throw new Error('SupplyService not initialized')
+    }
+    return supplyService.getSupplyByNmId(nmId)
+  }
+
+  /**
    * Обновляет глобальную налоговую ставку
    */
   const updateGlobalTax = async (val: number) => {
+    if (!dataLoadingService) {
+      throw new Error('DataLoadingService not initialized')
+    }
     globalTaxRate.value = val
-    await db.settings.put({ key: 'global_tax', value: val.toString() })
+    await dataLoadingService.saveGlobalTaxRate(val)
+  }
+
+  /**
+   * Обновляет себестоимость товара в поставке
+   * @param supplyID ID поставки
+   * @param nmID Артикул WB
+   * @param techSize Размер товара
+   * @param newCost Новая себестоимость (или undefined для удаления)
+   */
+  const updateSupplyItemCost = async (
+    supplyID: number,
+    nmID: number,
+    techSize: string,
+    newCost: number | undefined
+  ): Promise<void> => {
+    if (!supplyService) {
+      throw new Error('SupplyService not initialized')
+    }
+
+    console.log(`[AnalyticsStore] updateSupplyItemCost: начало, supplyID=${supplyID}, nmID=${nmID}, techSize=${techSize}, newCost=${newCost}`)
+    console.log(`[AnalyticsStore] updateSupplyItemCost: текущее состояние supplies.value.length=${supplies.value.length}`)
+
+    await supplyService.updateSupplyItemCost(supplyID, nmID, techSize, newCost)
+
+    // Обновляем supplies в state
+    const index = supplies.value.findIndex(s => s.supplyID === supplyID)
+    console.log(`[AnalyticsStore] updateSupplyItemCost: индекс поставки в стор=${index}`)
+    
+    if (index !== -1) {
+      const updatedSupply = await supplyService.getAllSupplies().then(supplies =>
+        supplies.find(s => s.supplyID === supplyID)
+      )
+      
+      if (updatedSupply) {
+        const item = updatedSupply.items.find(item => item.nmID === nmID && item.techSize === techSize)
+        console.log(`[AnalyticsStore] updateSupplyItemCost: загружена обновленная поставка, cost в item=${item?.cost}`)
+        
+        supplies.value[index] = updatedSupply
+        
+        // Автоматически обновляем агрегированный отчёт после изменения себестоимости
+        void requestAggregatedRecompute('supply-cost-updated', { debounceMs: 300 })
+        
+        // Проверяем, что значение попало в стор
+        const checkItem = supplies.value[index].items.find(item => item.nmID === nmID && item.techSize === techSize)
+        console.log(`[AnalyticsStore] updateSupplyItemCost: проверка стор, cost в supplies.value=${checkItem?.cost}`)
+        
+        // Логируем все items в этой поставке с их cost
+        console.log(`[AnalyticsStore] updateSupplyItemCost: все items в поставке ${supplyID}:`, 
+          updatedSupply.items.map(item => ({ nmID: item.nmID, techSize: item.techSize, cost: item.cost }))
+        )
+      } else {
+        console.warn(`[AnalyticsStore] updateSupplyItemCost: обновленная поставка не найдена после сохранения`)
+      }
+    } else {
+      console.warn(`[AnalyticsStore] updateSupplyItemCost: поставка не найдена в стор`)
+    }
+  }
+
+  /**
+   * Применяет цены из закупки к поставке
+   * Находит товары по nmID и применяет себестоимость из закупки
+   * @param purchaseID ID закупки
+   * @param supplyID ID поставки
+   */
+  const applyPurchaseToSupply = async (
+    purchaseID: number,
+    supplyID: number
+  ): Promise<void> => {
+    if (!supplyService) {
+      throw new Error('SupplyService not initialized')
+    }
+    await supplyService.applyPurchaseToSupply(purchaseID, supplyID)
   }
 
   return {
@@ -869,7 +879,6 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     returns,
     logistics,
     penalties,
-    deductions,
     advCosts,
     storageCosts,
     acceptanceCosts,
@@ -877,19 +886,40 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     productCards,
     unitCosts,
     warehouseRemains,
+    supplies,
     isInitialLoading,
     isHistoryLoading,
     isReady,
     filters,
     globalTaxRate,
+    backfillProgress,
+    dataFreshness,
+    weeklyReportReadiness,
+    weeklyReportAutoSync,
+    startupLogs,
+    addStartupLog,
     // Actions
+    initializeServices,
     loadAllDataFromDb,
     setFilters,
     updateGlobalTax,
+    loadSupplies,
+    getSupplyByNmId,
+    getAllSupplies,
+    updateSupplyItemCost,
+    applyPurchaseToSupply,
+    requestAggregatedRecompute,
+    freezeAggregatedRecompute,
+    thawAggregatedRecompute,
+    forceRecomputeAggregatedReport,
     // Getters
     totalRecordsCount,
     aggregatedReport,
     totalSummary,
+    isAggregatedReportDirty,
+    isAggregatedReportUpdating,
+    isAggregating,
+    storageCostsSumByRange,
+    acceptanceCostsSumByRange,
   }
 })
-

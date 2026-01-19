@@ -1,17 +1,5 @@
 <template>
   <div class="space-y-6">
-    <!-- Дополнительный контент для страницы дашборда -->
-    <div v-if="isDashboardRoute" class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <div class="bg-white p-6 rounded-lg shadow">
-        <h2 class="text-xl font-semibold mb-4">Синхронизация данных</h2>
-        <SyncButton />
-      </div>
-
-      <div>
-        <PnLDisplay />
-      </div>
-    </div>
-
     <!-- Заголовок -->
     <div class="flex items-center justify-between">
       <h2 class="text-2xl font-bold text-gray-900">Дашборд</h2>
@@ -27,7 +15,7 @@
 
     <!-- Состояние загрузки -->
     <div v-if="isLoading" class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
         <div v-for="i in 4" :key="i" class="bg-white p-6 rounded-lg shadow animate-pulse">
           <div class="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
           <div class="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -170,12 +158,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
 import { RefreshCw, AlertCircle } from 'lucide-vue-next'
 import { useWeeklyAnalytics } from '../composables/useWeeklyAnalytics'
 // TODO: Восстановить после реализации wbStore
 // import { useWbStore } from '../stores/wbStore'
-import { SyncButton, PnLDisplay } from './index'
 import BarChart from './BarChart.vue'
 import MetricCard from './MetricCard.vue'
 
@@ -186,9 +172,6 @@ const { fetch, data, isLoading } = useWeeklyAnalytics()
 //   isSyncing: false,
 //   isBackgroundSyncing: false,
 // }
-const route = useRoute()
-const isDashboardRoute = computed(() => route.path === '/' || route.name === 'Dashboard')
-
 // TODO: Восстановить после реализации wbStore
 // let backgroundRefreshInterval: number | null = null
 

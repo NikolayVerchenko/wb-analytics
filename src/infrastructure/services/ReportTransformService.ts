@@ -107,7 +107,12 @@ export class ReportTransformService {
       ap: row.additional_payment || undefined, // Дополнительная оплата
       
       // Внутренние поля
-      gi: row.gi_id || undefined, // gi_id
+      gi_id: row.gi_id || undefined, // gi_id
+    }
+
+    // Логируем для отладки, если gi_id отсутствует
+    if (!sale.gi_id && row.gi_id) {
+      console.warn(`[ReportTransformService] gi_id не сохранен: row.gi_id=${row.gi_id}, sale.gi_id=${sale.gi_id}`)
     }
 
     return sale

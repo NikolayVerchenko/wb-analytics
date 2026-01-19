@@ -3,11 +3,11 @@
     <!-- Кнопка открытия модального окна -->
     <button
       @click="openModal"
-      class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+      class="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
     >
-      <Calendar class="w-4 h-4" />
+      <Calendar class="w-3.5 h-3.5" />
       <span>{{ displayPeriod }}</span>
-      <ChevronDown class="w-4 h-4" />
+      <ChevronDown class="w-3.5 h-3.5" />
     </button>
 
     <!-- Модальное окно через Teleport -->

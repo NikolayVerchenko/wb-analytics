@@ -78,14 +78,14 @@
             <!-- Редактирование веса -->
             <div class="mt-1.5 pt-1.5 border-t border-gray-100">
               <div class="flex items-center gap-1">
-                <label class="text-xs font-medium text-gray-700">Вес:</label>
+                <label class="text-xs font-medium text-gray-700">Вес (кг):</label>
                 <input
-                  :value="product.weight || 0"
+                  :value="product.weight ? (product.weight > 1000 ? product.weight / 1000 : product.weight).toFixed(3) : ''"
                   @blur="updateProductWeight(product, ($event.target as HTMLInputElement).value)"
                   @keyup.enter="updateProductWeight(product, ($event.target as HTMLInputElement).value)"
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.001"
                   class="flex-1 px-1 py-0.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                   placeholder="0"
                 />
@@ -99,21 +99,79 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
-import { container } from '@core/di/container'
-import type { Product } from '@core/domain/entities/Product'
+import { useAnalyticsStore } from '../../stores/analyticsStore'
+import { db } from '../../db/db'
+import type { IProductCard } from '../../types/db'
+import { toastService } from '../services/ToastService'
 
-const products = ref<Product[]>([])
+const store = useAnalyticsStore()
+
+// Преобразуем productCards в формат для отображения
+interface ProductDisplay {
+  nmId: number
+  title: string
+  photo: string | null
+  vendorCode: string
+  sizes: string[]
+  weight: number | null
+}
+
+const products = computed<ProductDisplay[]>(() => {
+  // Группируем productCards по nmId (артикулу WB)
+  const productMap = new Map<number, ProductDisplay>()
+  
+  for (const card of store.productCards) {
+    if (!productMap.has(card.ni)) {
+      productMap.set(card.ni, {
+        nmId: card.ni,
+        title: card.title || '',
+        photo: card.img || null,
+        vendorCode: card.sa || '',
+        sizes: [],
+        weight: card.weight || null,
+      })
+    }
+    
+    // Добавляем размер в список размеров
+    const product = productMap.get(card.ni)!
+    if (card.sz && !product.sizes.includes(card.sz)) {
+      product.sizes.push(card.sz)
+    }
+    
+    // Обновляем фото, если оно есть
+    if (card.img && !product.photo) {
+      product.photo = card.img
+    }
+    
+    // Обновляем вес, если он есть (берем максимальный из всех размеров)
+    if (card.weight) {
+      // Если вес указан в граммах (больше 1000), конвертируем в кг
+      const weightInKg = card.weight > 1000 ? card.weight / 1000 : card.weight
+      if (!product.weight || weightInKg > product.weight) {
+        product.weight = weightInKg
+      }
+    }
+  }
+  
+  return Array.from(productMap.values())
+})
+
 const isSyncing = ref(false)
 
-const productService = container.getProductService()
-
 const loadProducts = async () => {
-  try {
-    products.value = await productService.getProducts()
-  } catch (error) {
-    console.error('Ошибка при загрузке товаров:', error)
+  // Данные уже загружены в store через loadAllDataFromDb
+  // Просто ждем, пока store будет готов
+  if (!store.isReady) {
+    await new Promise(resolve => {
+      const unwatch = store.$subscribe(() => {
+        if (store.isReady) {
+          unwatch()
+          resolve(undefined)
+        }
+      })
+    })
   }
 }
 
@@ -122,57 +180,43 @@ const syncProducts = async () => {
 
   isSyncing.value = true
   try {
-    const result = await productService.fetchAndSyncProducts()
-    console.log(`Синхронизация завершена: ${result.synced} товаров`)
-    
-    // Перезагружаем список после синхронизации
-    await loadProducts()
+    // Перезагружаем данные из БД
+    await store.loadAllDataFromDb()
+    toastService.success('Каталог товаров обновлен')
   } catch (error) {
     console.error('Ошибка при синхронизации товаров:', error)
-    alert('Ошибка при синхронизации товаров. Проверьте консоль для деталей.')
+    toastService.error('Ошибка при синхронизации товаров')
   } finally {
     isSyncing.value = false
   }
 }
 
-const formatDate = (dateString?: string): string => {
-  if (!dateString) return '—'
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('ru-RU', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return dateString
-  }
-}
-
-const updateProductWeight = async (product: Product, weightValue: string) => {
-  const weight = parseFloat(weightValue) || 0
-  if (weight < 0) return
+const updateProductWeight = async (product: ProductDisplay, weightValue: string) => {
+  const weightInput = parseFloat(weightValue) || 0
+  if (weightInput < 0) return
 
   try {
-    const updatedProduct: Product = {
-      ...product,
-      weight,
-      lastUpdated: new Date().toISOString(),
+    // Обновляем вес во всех карточках товара с этим nmId
+    const cards = store.productCards.filter(c => c.ni === product.nmId)
+    
+    // Вес всегда сохраняем в кг
+    const weightInKg = weightInput
+    
+    for (const card of cards) {
+      const updatedCard = {
+        ...card,
+        weight: weightInKg,
+      }
+      await db.product_cards.put(updatedCard)
     }
     
-    const productRepository = container.getProductRepository()
-    await productRepository.upsert(updatedProduct)
+    // Обновляем store
+    await store.loadAllDataFromDb()
     
-    // Обновляем локальное состояние
-    const index = products.value.findIndex(p => p.nmId === product.nmId)
-    if (index !== -1) {
-      products.value[index] = updatedProduct
-    }
+    toastService.success('Вес товара обновлен')
   } catch (error) {
     console.error('Ошибка при обновлении веса товара:', error)
-    alert('Ошибка при сохранении веса товара')
+    toastService.error('Ошибка при сохранении веса товара')
   }
 }
 

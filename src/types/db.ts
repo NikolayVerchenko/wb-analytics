@@ -86,6 +86,7 @@ export interface ISale extends BaseFinanceRecord {
   pv?: number // Цена продажи (retail_price)
   pa?: number // Сумма продажи (retail_amount)
   pz?: number // К выплате (ppvz_for_pay)
+  gi_id?: number // ID поставки (gi_id из API)
 }
 
 /**
@@ -224,4 +225,75 @@ export interface IUnitCost {
   ni: number // Primary Key: Артикул WB (nmId)
   cost: number // Себестоимость товара (руб.)
   taxRate: number // Налоговая ставка (%)
+}
+
+/**
+ * Интерфейс для товара в поставке
+ */
+export interface ISupplyItem {
+  nmID: number // Артикул WB
+  techSize: string // Размер товара
+  quantity: number // Указано в поставке, шт
+  acceptedQuantity: number | null // Принято, шт
+  cost?: number // Себестоимость единицы товара (руб.)
+}
+
+/**
+ * Интерфейс для поставок
+ * PK: supplyID (ID поставки)
+ */
+export interface ISupply {
+  supplyID: number // Primary Key: ID поставки
+  factDate: string | null // Фактическая дата приемки (YYYY-MM-DD)
+  createDate: string // Дата создания поставки (YYYY-MM-DD)
+  supplyDate: string | null // Плановая дата отгрузки (YYYY-MM-DD)
+  items: ISupplyItem[] // Массив товаров в поставке
+}
+
+/**
+ * Интерфейс для товара в закупке из Китая
+ */
+export interface IPurchaseItem {
+  nmID: number // Артикул WB
+  vendorCode: string // Артикул продавца
+  title?: string // Название товара (только для чтения)
+  color?: string // Цвет товара (только для чтения)
+  techSize: string // Размер товара
+  weightPerUnit?: number // Вес единицы в кг
+  priceCNY: number // Цена в CNY
+  logisticsCNY: number // Логистика по Китаю в CNY
+  fulfillmentRUB: number // Фулфилмент в RUB
+  packagingRUB: number // Упаковка в RUB
+  kizRUB: number // КИЗ в RUB
+  quantity: number // Количество
+}
+
+/**
+ * Интерфейс для закупки из Китая
+ * PK: id (автоинкремент)
+ */
+export interface IPurchase {
+  id?: number // Primary Key: автоинкремент
+  date: string // Дата закупки (YYYY-MM-DD)
+  orderNumber: string // Номер заказа
+  status: string // Статус закупки
+  exchangeRate: number // Курс CNY к RUB
+  buyerCommissionPercent: number // Комиссия байера (%)
+  logisticsToMoscow: number // Общая логистика до Москвы (RUB)
+  items: IPurchaseItem[] // Массив товаров в закупке
+}
+
+/**
+ * Интерфейс для загруженных периодов данных
+ * PK: id (автоинкремент)
+ * Используется для фиксации того, по какие даты уже загружены данные в базу
+ */
+export interface ILoadedPeriod {
+  id?: number // Primary Key: автоинкремент
+  ds: string // dataset - ключ датасета (sales, returns, logistics, etc.)
+  pt: 'daily' | 'weekly' // periodType - тип периода
+  fr: string // from - начало периода (ISO дата: YYYY-MM-DD)
+  to: string // to - конец периода (ISO дата: YYYY-MM-DD)
+  la: string // loadedAt - когда был загружен период (ISO дата+время)
+  rc?: number // recordCount - количество загруженных записей (опционально)
 }

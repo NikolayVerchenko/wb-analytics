@@ -36,6 +36,6 @@ export interface ISale {
   ap?: number // Дополнительная оплата (additional_payment)
   
   // Внутренние поля для связи
-  gi?: number // gi_id (внутренний ID WB)
+  gi_id?: number // gi_id (внутренний ID WB)
 }
 
