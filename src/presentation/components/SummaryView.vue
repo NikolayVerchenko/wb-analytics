@@ -8,7 +8,7 @@
       <div class="flex items-center gap-3 flex-wrap">
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+          class="app-btn-sm"
           @click="openFilters"
         >
           <svg class="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -286,6 +286,17 @@
               <button
                 type="button"
                 class="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs"
+                :class="activeFilterTab === 'brand' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:bg-white/70'"
+                @click="activeFilterTab = 'brand'"
+              >
+                Бренд
+                <span v-if="draftBrands.length || draftIncludeNoBrand" class="text-xs text-blue-600">
+                  {{ draftBrands.length + (draftIncludeNoBrand ? 1 : 0) }}
+                </span>
+              </button>
+              <button
+                type="button"
+                class="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs"
                 :class="activeFilterTab === 'article' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:bg-white/70'"
                 @click="activeFilterTab = 'article'"
               >
@@ -357,6 +368,47 @@
                     </span>
                   </label>
                   <div v-if="filteredVendorOptions.length === 0" class="text-xs text-gray-400">
+                    Нет совпадений
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="activeFilterTab === 'brand'">
+                <div class="relative mb-3">
+                  <input
+                    v-model="filterSearch"
+                    type="text"
+                    placeholder="Поиск по брендам"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <svg class="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.6-4.65a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <label class="mb-2 flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    :checked="draftIncludeNoBrand"
+                    @change="draftIncludeNoBrand = !draftIncludeNoBrand"
+                  />
+                  Без бренда
+                </label>
+                <div class="max-h-56 space-y-1.5 overflow-y-auto pr-1 text-xs text-gray-700">
+                  <label
+                    v-for="brand in filteredBrandOptions"
+                    :key="brand.code"
+                    class="flex items-start gap-2"
+                  >
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      :checked="draftBrands.includes(brand.code)"
+                      @change="toggleDraftBrand(brand.code)"
+                    />
+                    <span class="leading-tight">{{ brand.code }}</span>
+                  </label>
+                  <div v-if="filteredBrandOptions.length === 0" class="text-xs text-gray-400">
                     Нет совпадений
                   </div>
                 </div>
@@ -616,19 +668,25 @@ const {
   searchQuery,
   selectedVendorCodes,
   selectedSubjects,
+  selectedBrands,
+  includeNoBrand,
   filteredRows,
 } = useSummaryFilter(sourceData)
 
 const isFiltersOpen = ref(false)
-const activeFilterTab = ref<'subject' | 'vendorCode' | 'article'>('subject')
+const activeFilterTab = ref<'subject' | 'vendorCode' | 'brand' | 'article'>('subject')
 const filterSearch = ref('')
 const draftVendorCodes = ref<string[]>([])
 const draftSubjects = ref<string[]>([])
+const draftBrands = ref<string[]>([])
+const draftIncludeNoBrand = ref(false)
 const draftSearchQuery = ref('')
 
 const openFilters = () => {
   draftVendorCodes.value = [...selectedVendorCodes.value]
   draftSubjects.value = [...selectedSubjects.value]
+  draftBrands.value = [...selectedBrands.value]
+  draftIncludeNoBrand.value = includeNoBrand.value
   draftSearchQuery.value = searchQuery.value
   filterSearch.value = ''
   isFiltersOpen.value = true
@@ -641,6 +699,8 @@ const closeFilters = () => {
 const applyFilters = () => {
   selectedVendorCodes.value = [...draftVendorCodes.value]
   selectedSubjects.value = [...draftSubjects.value]
+  selectedBrands.value = [...draftBrands.value]
+  includeNoBrand.value = draftIncludeNoBrand.value
   searchQuery.value = draftSearchQuery.value.trim()
   closeFilters()
 }
@@ -648,6 +708,8 @@ const applyFilters = () => {
 const resetFilters = () => {
   draftVendorCodes.value = []
   draftSubjects.value = []
+  draftBrands.value = []
+  draftIncludeNoBrand.value = false
   draftSearchQuery.value = ''
   filterSearch.value = ''
   applyFilters()
@@ -668,6 +730,15 @@ const toggleDraftSubject = (code: string) => {
     draftSubjects.value.push(code)
   } else {
     draftSubjects.value.splice(index, 1)
+  }
+}
+
+const toggleDraftBrand = (code: string) => {
+  const index = draftBrands.value.indexOf(code)
+  if (index === -1) {
+    draftBrands.value.push(code)
+  } else {
+    draftBrands.value.splice(index, 1)
   }
 }
 
@@ -714,10 +785,30 @@ const filteredVendorOptions = computed(() => {
   })
 })
 
+const brandOptions = computed(() => {
+  const brandSet = new Set<string>()
+  for (const product of store.aggregatedReport) {
+    if (product.bc) {
+      brandSet.add(product.bc)
+    }
+  }
+  return Array.from(brandSet)
+    .sort((a, b) => a.localeCompare(b))
+    .map((brand) => ({ code: brand }))
+})
+
+const filteredBrandOptions = computed(() => {
+  const query = filterSearch.value.trim().toLowerCase()
+  if (!query) return brandOptions.value
+  return brandOptions.value.filter((brand) => brand.code.toLowerCase().includes(query))
+})
+
 const activeFiltersCount = computed(() => {
   return (
     selectedVendorCodes.value.length +
     selectedSubjects.value.length +
+    selectedBrands.value.length +
+    (includeNoBrand.value ? 1 : 0) +
     (searchQuery.value.trim() ? 1 : 0)
   )
 })

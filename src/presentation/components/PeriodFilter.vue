@@ -3,7 +3,7 @@
     <!-- Кнопка открытия модального окна -->
     <button
       @click="openModal"
-      class="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+      class="app-btn-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
     >
       <Calendar class="w-3.5 h-3.5" />
       <span>{{ displayPeriod }}</span>
@@ -55,7 +55,7 @@
                     :key="preset.key"
                     @click="selectPreset(preset.key)"
                     :class="[
-                      'px-4 py-2 text-sm font-medium rounded-lg border transition-colors',
+                      'app-btn-sm-outline transition-colors',
                       selectedPreset === preset.key
                         ? 'bg-blue-50 border-blue-500 text-blue-700'
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -69,20 +69,20 @@
               <!-- Выбор недели -->
               <div>
                 <h4 class="text-sm font-medium text-gray-700 mb-3">Выбрать неделю</h4>
-                <select
-                  v-model="selectedWeek"
-                  @change="handleWeekChange"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                >
-                  <option value="">-- Выберите неделю --</option>
-                  <option
-                    v-for="week in weeks"
-                    :key="week.start"
-                    :value="week.start + '_' + week.end"
-                  >
-                    {{ week.label }}
-                  </option>
-                </select>
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                  <div class="max-h-48 overflow-y-auto divide-y divide-gray-100">
+                    <button
+                      v-for="week in weeks"
+                      :key="week.start"
+                      type="button"
+                      class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors"
+                      :class="selectedWeek === week.start + '_' + week.end ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'"
+                      @click="selectWeek(week)"
+                    >
+                      {{ week.label }}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <!-- Произвольный выбор -->
@@ -116,13 +116,13 @@
               <div class="flex gap-3">
                 <button
                   @click="closeModal"
-                  class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  class="flex-1 app-btn-sm-outline bg-gray-100 hover:bg-gray-200 transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   @click="applyPeriod"
-                  class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  class="flex-1 app-btn-sm-primary transition-colors"
                 >
                   Применить
                 </button>
@@ -141,6 +141,23 @@ import { Calendar, ChevronDown, X } from 'lucide-vue-next'
 import { useAnalyticsStore } from '../../stores/analyticsStore'
 
 const store = useAnalyticsStore()
+
+const props = withDefaults(
+  defineProps<{
+    dateFrom?: string
+    dateTo?: string
+  }>(),
+  {
+    dateFrom: undefined,
+    dateTo: undefined,
+  }
+)
+
+const emit = defineEmits<{
+  (event: 'update:dateFrom', value: string): void
+  (event: 'update:dateTo', value: string): void
+  (event: 'apply', payload: { from: string; to: string }): void
+}>()
 
 const isOpen = ref(false)
 const selectedPreset = ref<string | null>(null)
@@ -265,58 +282,39 @@ const formatDateForLabel = (date: Date): string => {
   return `${day}.${month}`
 }
 
-// Генерация массива недель для предыдущего года (данные обычно за прошлый год)
+// Генерация массива недель от минимальной даты до текущей недели
 const generateWeeks = (): WeekOption[] => {
-  const currentYear = new Date().getFullYear()
-  const targetYear = currentYear - 1 // Генерируем недели для предыдущего года
   const weeks: WeekOption[] = []
-  
-  // Находим первый понедельник года
-  const startOfYear = new Date(targetYear, 0, 1)
-  startOfYear.setHours(0, 0, 0, 0)
-  let firstMonday = getWeekStart(startOfYear)
-  
-  // Если понедельник оказался в прошлом году, берем следующий понедельник
-  if (firstMonday.getFullYear() < targetYear) {
-    firstMonday = new Date(firstMonday)
-    firstMonday.setDate(firstMonday.getDate() + 7)
-  }
-  
-  // Генерируем недели до конца года (включая недели, которые заканчиваются в следующем году)
-  let currentWeekStart = new Date(firstMonday)
-  
-  // Генерируем недели, которые начинаются в целевом году
-  while (currentWeekStart.getFullYear() <= targetYear + 1) {
+  const minDate = new Date(2024, 0, 29)
+  minDate.setHours(0, 0, 0, 0)
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const lastWeekStart = getWeekStart(today)
+
+  let currentWeekStart = getWeekStart(minDate)
+
+  while (currentWeekStart <= lastWeekStart) {
     const weekEnd = new Date(currentWeekStart)
-    weekEnd.setDate(weekEnd.getDate() + 6) // Понедельник + 6 дней = Воскресенье
+    weekEnd.setDate(weekEnd.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
-    
-    // Включаем только недели, которые начинаются в целевом году
-    if (currentWeekStart.getFullYear() === targetYear) {
-      const weekNumber = getWeekNumber(currentWeekStart)
-      const startStr = formatDateToISO(currentWeekStart)
-      const endStr = formatDateToISO(weekEnd)
-      const startFormatted = formatDateForLabel(currentWeekStart)
-      const endFormatted = formatDateForLabel(weekEnd)
-      
-      weeks.push({
-        label: `Неделя ${weekNumber} (${startFormatted} - ${endFormatted})`,
-        start: startStr,
-        end: endStr,
-      })
-    }
-    
+
+    const weekNumber = getWeekNumber(currentWeekStart)
+    const startStr = formatDateToISO(currentWeekStart)
+    const endStr = formatDateToISO(weekEnd)
+    const startFormatted = formatDateForLabel(currentWeekStart)
+    const endFormatted = formatDateForLabel(weekEnd)
+
+    weeks.push({
+      label: `Неделя ${weekNumber} (${startFormatted} - ${endFormatted})`,
+      start: startStr,
+      end: endStr,
+    })
+
     currentWeekStart = new Date(currentWeekStart)
     currentWeekStart.setDate(currentWeekStart.getDate() + 7)
-    
-    // Прекращаем, если прошли достаточно далеко в следующий год (январь следующего года)
-    if (currentWeekStart.getFullYear() > targetYear + 1 || 
-        (currentWeekStart.getFullYear() === targetYear + 1 && currentWeekStart.getMonth() > 0)) {
-      break
-    }
   }
-  
-  // Сортируем в обратном порядке (от самой свежей к старой)
+
   return weeks.reverse()
 }
 
@@ -356,15 +354,13 @@ const selectPreset = (presetKey: string) => {
 }
 
 // Обработка изменения выбранной недели
-const handleWeekChange = () => {
-  if (selectedWeek.value) {
-    const [start, end] = selectedWeek.value.split('_')
-    tempDateFrom.value = start
-    tempDateTo.value = end
-    customDateFrom.value = start
-    customDateTo.value = end
-    selectedPreset.value = null
-  }
+const selectWeek = (week: WeekOption) => {
+  selectedWeek.value = `${week.start}_${week.end}`
+  tempDateFrom.value = week.start
+  tempDateTo.value = week.end
+  customDateFrom.value = week.start
+  customDateTo.value = week.end
+  selectedPreset.value = null
 }
 
 // Обработка изменения кастомных дат
@@ -385,10 +381,22 @@ const formatDate = (dateStr: string | null): string => {
   return `${day}.${month}.${year}`
 }
 
+const usesExternalPeriod = computed(() => {
+  return props.dateFrom !== undefined || props.dateTo !== undefined
+})
+
+const activeDateFrom = computed(() => {
+  return usesExternalPeriod.value ? props.dateFrom : store.filters.dateFrom
+})
+
+const activeDateTo = computed(() => {
+  return usesExternalPeriod.value ? props.dateTo : store.filters.dateTo
+})
+
 // Отображаемый период на кнопке
 const displayPeriod = computed(() => {
-  const from = store.filters.dateFrom
-  const to = store.filters.dateTo
+  const from = activeDateFrom.value
+  const to = activeDateTo.value
   if (!from || !to) {
     return 'Выберите период'
   }
@@ -397,11 +405,12 @@ const displayPeriod = computed(() => {
 
 // Открытие модального окна
 const openModal = () => {
-  // Инициализируем значения из store
-  tempDateFrom.value = store.filters.dateFrom || ''
-  tempDateTo.value = store.filters.dateTo || ''
-  customDateFrom.value = store.filters.dateFrom || ''
-  customDateTo.value = store.filters.dateTo || ''
+  const from = activeDateFrom.value || ''
+  const to = activeDateTo.value || ''
+  tempDateFrom.value = from
+  tempDateTo.value = to
+  customDateFrom.value = from
+  customDateTo.value = to
   selectedPreset.value = null
   selectedWeek.value = ''
 
@@ -416,7 +425,13 @@ const closeModal = () => {
 // Применение периода
 const applyPeriod = () => {
   if (tempDateFrom.value && tempDateTo.value) {
-    store.setFilters(tempDateFrom.value, tempDateTo.value)
+    if (usesExternalPeriod.value) {
+      emit('update:dateFrom', tempDateFrom.value)
+      emit('update:dateTo', tempDateTo.value)
+      emit('apply', { from: tempDateFrom.value, to: tempDateTo.value })
+    } else {
+      store.setFilters(tempDateFrom.value, tempDateTo.value)
+    }
     closeModal()
   }
 }
@@ -424,7 +439,14 @@ const applyPeriod = () => {
 // Инициализация при монтировании
 onMounted(() => {
   // Если фильтры не установлены, устанавливаем период по умолчанию: последний месяц
-  if (!store.filters.dateFrom || !store.filters.dateTo) {
+  if (usesExternalPeriod.value) {
+    if (!props.dateFrom || !props.dateTo) {
+      const period = getLastNDays(30)
+      emit('update:dateFrom', period.from)
+      emit('update:dateTo', period.to)
+      emit('apply', { from: period.from, to: period.to })
+    }
+  } else if (!store.filters.dateFrom || !store.filters.dateTo) {
     const period = getLastNDays(30)
     store.setFilters(period.from, period.to)
   }

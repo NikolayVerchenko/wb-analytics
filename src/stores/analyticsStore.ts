@@ -145,6 +145,17 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     supplyService = supply
   }
 
+  const aggregateReportForPeriod = async (dateFrom: string, dateTo: string) => {
+    if (!reportAggregationService) {
+      throw new Error('reportAggregationService is not initialized. Call initializeServices() first.')
+    }
+    return reportAggregationService.aggregateReport({
+      dateFrom,
+      dateTo,
+      globalTaxRate: globalTaxRate.value,
+    })
+  }
+
   const addStartupLog = (entry: { level: 'info' | 'warn' | 'error'; message: string; at?: string }) => {
     startupLogs.value.unshift({
       at: entry.at ?? new Date().toISOString(),
@@ -915,6 +926,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     // Getters
     totalRecordsCount,
     aggregatedReport,
+    aggregateReportForPeriod,
     totalSummary,
     isAggregatedReportDirty,
     isAggregatedReportUpdating,
