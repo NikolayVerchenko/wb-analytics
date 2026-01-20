@@ -168,9 +168,40 @@
 
       <!-- График -->
       <div class="bg-white p-6 rounded-lg shadow">
-        <h3 class="text-lg font-semibold mb-4">Динамика по неделям</h3>
-        <div class="h-64">
-          <BarChart :data="chartData" />
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 class="text-lg font-semibold">Динамика по дням</h3>
+          <div class="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+            <span class="flex items-center gap-2">
+              <span class="inline-block h-0.5 w-6 bg-gray-700"></span>
+              Текущий период
+            </span>
+            <span class="flex items-center gap-2">
+              <span class="inline-block h-0.5 w-6 border-t-2 border-dashed border-gray-500"></span>
+              Предыдущий период
+            </span>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 mb-4 text-xs text-gray-700">
+          <span class="text-gray-500">Метрики:</span>
+          <label
+            v-for="metric in metricOptions"
+            :key="metric.id"
+            class="flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1"
+          >
+            <input
+              v-model="selectedMetrics"
+              type="checkbox"
+              :value="metric.id"
+              class="h-3.5 w-3.5"
+            />
+            <span class="inline-flex items-center gap-2">
+              <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: metric.color }"></span>
+              {{ metric.label }}
+            </span>
+          </label>
+        </div>
+        <div class="h-72">
+          <LineChart :data="chartData" />
         </div>
       </div>
 
@@ -480,7 +511,7 @@ import { filterProducts } from '../composables/useProductFilter'
 import { useAnalyticsStore } from '../../stores/analyticsStore'
 // TODO: Восстановить после реализации wbStore
 // import { useWbStore } from '../stores/wbStore'
-import BarChart from './BarChart.vue'
+import LineChart from './LineChart.vue'
 import MetricCard from './MetricCard.vue'
 import PeriodFilter from './PeriodFilter.vue'
 import type { ProductAggregate } from '../../types/analytics'
@@ -497,14 +528,171 @@ const store = useAnalyticsStore()
 // TODO: Восстановить после реализации wbStore
 // let backgroundRefreshInterval: number | null = null
 
-const chartData = computed(() => {
-  if (!dashboardData.value) return { labels: [], sales: [], returns: [] }
+type MetricId =
+  | 'sales'
+  | 'returns'
+  | 'ordersSum'
+  | 'ordersCount'
+  | 'buyoutSum'
+  | 'buyoutCount'
+  | 'cartCount'
+  | 'openCount'
 
-  return {
-    labels: dashboardData.value.weeks.map((w: any) => w.period),
-    sales: dashboardData.value.weeks.map((w: any) => w.totalSales),
-    returns: dashboardData.value.weeks.map((w: any) => w.totalReturns),
+type MetricUnit = 'currency' | 'count'
+
+type MetricOption = {
+  id: MetricId
+  label: string
+  color: string
+  unit: MetricUnit
+}
+
+const metricOptions: MetricOption[] = [
+  { id: 'sales', label: 'Продажи', color: 'rgb(59, 130, 246)', unit: 'currency' },
+  { id: 'returns', label: 'Возвраты', color: 'rgb(239, 68, 68)', unit: 'currency' },
+  { id: 'ordersSum', label: 'Заказы (сумма)', color: 'rgb(16, 185, 129)', unit: 'currency' },
+  { id: 'ordersCount', label: 'Заказы (шт)', color: 'rgb(99, 102, 241)', unit: 'count' },
+  { id: 'buyoutSum', label: 'Выкупы (сумма)', color: 'rgb(245, 158, 11)', unit: 'currency' },
+  { id: 'buyoutCount', label: 'Выкупы (шт)', color: 'rgb(14, 116, 144)', unit: 'count' },
+  { id: 'cartCount', label: 'Корзина (шт)', color: 'rgb(236, 72, 153)', unit: 'count' },
+  { id: 'openCount', label: 'Переходы', color: 'rgb(75, 85, 99)', unit: 'count' },
+]
+
+const selectedMetrics = ref<MetricId[]>(['sales', 'returns'])
+
+const buildDateRange = (from: string, to: string): string[] => {
+  const dates: string[] = []
+  let cursor = from
+  while (cursor <= to) {
+    dates.push(cursor)
+    cursor = addDays(cursor, 1)
   }
+  return dates
+}
+
+const formatDayLabel = (iso: string): string => {
+  const [year, month, day] = iso.split('-')
+  return `${day}.${month}`
+}
+
+const sumByDate = <T>(
+  records: T[],
+  from: string,
+  to: string,
+  allowedNmIds: Set<number>,
+  getDate: (record: T) => string,
+  getValue: (record: T) => number,
+  getNmId?: (record: T) => number | undefined
+): Map<string, number> => {
+  const totals = new Map<string, number>()
+  for (const record of records) {
+    const date = getDate(record)
+    if (date < from || date > to) continue
+    if (getNmId) {
+      const nmId = getNmId(record)
+      if (nmId !== undefined && !allowedNmIds.has(nmId)) continue
+    }
+    const value = getValue(record)
+    if (!Number.isFinite(value)) continue
+    totals.set(date, (totals.get(date) || 0) + value)
+  }
+  return totals
+}
+
+const chartData = computed(() => {
+  if (!dashboardDateFrom.value || !dashboardDateTo.value) {
+    return { labels: [], datasets: [] }
+  }
+
+  const currentRange = buildDateRange(dashboardDateFrom.value, dashboardDateTo.value)
+  const labels = currentRange.map(formatDayLabel)
+  const previousPeriod = getPreviousPeriod(dashboardDateFrom.value, dashboardDateTo.value)
+  const allowedNmIds = new Set(filteredRows.value.map((row) => row.ni))
+
+  const datasets = selectedMetrics.value.flatMap((metricId) => {
+    const option = metricOptions.find((metric) => metric.id === metricId)
+    if (!option) return []
+
+    let currentMap = new Map<string, number>()
+    let previousMap = new Map<string, number>()
+
+    switch (metricId) {
+      case 'sales':
+        currentMap = sumByDate(store.sales, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.pa || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.sales, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.pa || 0, (row) => row.ni)
+        }
+        break
+      case 'returns':
+        currentMap = sumByDate(store.returns, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.pa || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.returns, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.pa || 0, (row) => row.ni)
+        }
+        break
+      case 'ordersSum':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.os || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.os || 0, (row) => row.ni)
+        }
+        break
+      case 'ordersCount':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.oc || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.oc || 0, (row) => row.ni)
+        }
+        break
+      case 'buyoutSum':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.bs || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.bs || 0, (row) => row.ni)
+        }
+        break
+      case 'buyoutCount':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.bc_cnt || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.bc_cnt || 0, (row) => row.ni)
+        }
+        break
+      case 'cartCount':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.cc || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.cc || 0, (row) => row.ni)
+        }
+        break
+      case 'openCount':
+        currentMap = sumByDate(store.productOrders, dashboardDateFrom.value, dashboardDateTo.value, allowedNmIds, (row) => row.dt, (row) => row.vsc || 0, (row) => row.ni)
+        if (previousPeriod) {
+          previousMap = sumByDate(store.productOrders, previousPeriod.from, previousPeriod.to, allowedNmIds, (row) => row.dt, (row) => row.vsc || 0, (row) => row.ni)
+        }
+        break
+      default:
+        break
+    }
+
+    const currentDataset = {
+      label: option.label,
+      data: currentRange.map((date) => currentMap.get(date) || 0),
+      color: option.color,
+      unit: option.unit,
+    }
+
+    if (!previousPeriod) {
+      return [currentDataset]
+    }
+
+    const previousRange = buildDateRange(previousPeriod.from, previousPeriod.to)
+    const previousDataset = {
+      label: `${option.label} (пред. период)`,
+      data: previousRange.map((date) => previousMap.get(date) || 0),
+      color: option.color,
+      unit: option.unit,
+      dashed: true,
+    }
+
+    return [currentDataset, previousDataset]
+  })
+
+  return { labels, datasets }
 })
 
 const isDashboardLoading = ref(false)

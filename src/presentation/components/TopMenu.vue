@@ -41,7 +41,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, FileText, Settings, Package, ShoppingCart, Truck, TrendingUp, Layers, List } from 'lucide-vue-next'
+import { LayoutDashboard, FileText, Settings, Package, ShoppingCart, Truck, TrendingUp, Layers, List, HeartPulse } from 'lucide-vue-next'
 // TODO: Восстановить после реализации wbStore
 // import { useWbStore } from '../stores/wbStore'
 
@@ -62,6 +62,7 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { path: '/', label: 'Дашборд', icon: LayoutDashboard },
+  { path: '/pulse', label: 'Пульс', icon: HeartPulse },
   { path: '/summary', label: 'Сводка', icon: FileText },
   { path: '/products', label: 'Товары', icon: Package },
   { path: '/purchases', label: 'Закупки', icon: ShoppingCart },

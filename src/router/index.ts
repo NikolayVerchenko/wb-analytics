@@ -8,6 +8,7 @@ import SalesView from '../presentation/components/SalesView.vue'
 import FinanceView from '../presentation/components/FinanceView.vue'
 import BatchManagementView from '../presentation/components/BatchManagementView.vue'
 import ZakupkiView from '../presentation/components/ZakupkiView.vue'
+import PulseView from '../presentation/components/PulseView.vue'
 import SyncView from '../views/SyncView.vue'
 import CostsView from '../views/CostsView.vue'
 import PurchasesListView from '../presentation/components/purchases/PurchasesListView.vue'
@@ -90,6 +91,11 @@ const routes = [
     path: '/zakupki',
     name: 'Zakupki',
     component: ZakupkiView,
+  },
+  {
+    path: '/pulse',
+    name: 'Pulse',
+    component: PulseView,
   },
 ]
 
