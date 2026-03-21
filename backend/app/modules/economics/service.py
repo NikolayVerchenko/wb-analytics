@@ -1,0 +1,142 @@
+from datetime import date
+from decimal import Decimal
+from uuid import UUID
+
+from fastapi import HTTPException
+import psycopg
+
+from backend.app.modules.economics.repository import EconomicsRepository
+from backend.app.modules.economics.schemas import (
+    EconomicsPeriodItemRead,
+    EconomicsPeriodItemsResponse,
+    EconomicsPeriodSizeRead,
+    EconomicsPeriodTotalsRead,
+)
+
+
+class EconomicsService:
+    _SORT_MAP = {
+        'vendor_code_asc': 'vendor_code asc nulls last, nm_id',
+        'vendor_code_desc': 'vendor_code desc nulls last, nm_id',
+        'profit_desc': 'profit_amount desc nulls last, vendor_code nulls last, nm_id',
+        'profit_asc': 'profit_amount asc nulls last, vendor_code nulls last, nm_id',
+        'revenue_desc': 'realization_before_spp desc nulls last, vendor_code nulls last, nm_id',
+        'revenue_asc': 'realization_before_spp asc nulls last, vendor_code nulls last, nm_id',
+        'margin_desc': 'margin_percent desc nulls last, vendor_code nulls last, nm_id',
+        'margin_asc': 'margin_percent asc nulls last, vendor_code nulls last, nm_id',
+        'roi_desc': 'roi_percent desc nulls last, vendor_code nulls last, nm_id',
+        'roi_asc': 'roi_percent asc nulls last, vendor_code nulls last, nm_id',
+    }
+
+    def __init__(self, conn: psycopg.Connection) -> None:
+        self._repository = EconomicsRepository(conn)
+
+    def list_period_items(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+        search: str | None,
+        sort: str | None,
+        limit: int,
+        offset: int,
+        only_negative_profit: bool,
+        min_profit: Decimal | None,
+        max_profit: Decimal | None,
+    ) -> EconomicsPeriodItemsResponse:
+        if date_from > date_to:
+            raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
+
+        if sort is None:
+            order_by = 'vendor_code nulls last, nm_id'
+        else:
+            order_by = self._SORT_MAP.get(sort)
+            if order_by is None:
+                raise HTTPException(status_code=400, detail='invalid sort')
+
+        rows, totals_row = self._repository.list_period_items(
+            account_id,
+            date_from,
+            date_to,
+            search,
+            order_by,
+            limit,
+            offset,
+            only_negative_profit,
+            min_profit,
+            max_profit,
+        )
+        items = [EconomicsPeriodItemRead.model_validate(row) for row in rows]
+        totals = EconomicsPeriodTotalsRead.model_validate(totals_row)
+        return EconomicsPeriodItemsResponse(items=items, totals=totals)
+
+    def list_period_sizes(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+        nm_id: int,
+        vendor_code: str,
+    ) -> list[EconomicsPeriodSizeRead]:
+        if date_from > date_to:
+            raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
+
+        rows = self._repository.list_period_sizes(account_id, date_from, date_to, nm_id, vendor_code)
+        return [EconomicsPeriodSizeRead.model_validate(row) for row in rows]
+
+    def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
+        sales_quantity = self._sum(items, 'sales_quantity')
+        delivery_quantity = self._sum(items, 'delivery_quantity')
+        refusal_quantity = self._sum(items, 'refusal_quantity')
+        realization_before_spp = self._sum(items, 'realization_before_spp')
+        realization_after_spp = self._sum(items, 'realization_after_spp')
+        spp_amount = self._sum(items, 'spp_amount')
+        seller_transfer = self._sum(items, 'seller_transfer')
+        wb_commission_amount = self._sum(items, 'wb_commission_amount')
+        advert_cost = self._sum(items, 'advert_cost')
+        delivery_cost = self._sum(items, 'delivery_cost')
+        paid_storage_cost = self._sum(items, 'paid_storage_cost')
+        penalty_cost = self._sum(items, 'penalty_cost')
+        acceptance_cost = self._sum(items, 'acceptance_cost')
+        tax_amount = self._sum(items, 'tax_amount')
+        cogs_amount = self._sum(items, 'cogs_amount')
+        profit_amount = self._sum(items, 'profit_amount')
+
+        return EconomicsPeriodTotalsRead(
+            sales_quantity=sales_quantity,
+            delivery_quantity=delivery_quantity,
+            refusal_quantity=refusal_quantity,
+            buyout_percent=self._percent(sales_quantity, delivery_quantity),
+            realization_before_spp=realization_before_spp,
+            realization_after_spp=realization_after_spp,
+            spp_amount=spp_amount,
+            spp_percent=self._percent(spp_amount, realization_before_spp),
+            seller_transfer=seller_transfer,
+            wb_commission_amount=wb_commission_amount,
+            wb_commission_percent=self._percent(wb_commission_amount, realization_before_spp),
+            advert_cost=advert_cost,
+            delivery_cost=delivery_cost,
+            paid_storage_cost=paid_storage_cost,
+            penalty_cost=penalty_cost,
+            acceptance_cost=acceptance_cost,
+            tax_amount=tax_amount,
+            cogs_amount=cogs_amount,
+            profit_amount=profit_amount,
+            margin_percent=self._percent(profit_amount, realization_before_spp),
+            roi_percent=self._percent(profit_amount, cogs_amount),
+        )
+
+    @staticmethod
+    def _sum(items: list[EconomicsPeriodItemRead], field: str) -> Decimal:
+        total = Decimal('0')
+        for item in items:
+            value = getattr(item, field)
+            if value is not None:
+                total += Decimal(str(value))
+        return total
+
+    @staticmethod
+    def _percent(numerator: Decimal, denominator: Decimal) -> Decimal | None:
+        if denominator == 0:
+            return None
+        return ((numerator / denominator) * Decimal('100')).quantize(Decimal('0.01'))

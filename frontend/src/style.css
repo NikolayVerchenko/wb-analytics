@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .app-table-shell {
+    @apply overflow-hidden rounded-[24px] border border-stone-200 bg-white;
+  }
+
+  .app-table-head {
+    @apply bg-stone-50;
+  }
+
+  .app-table-head-row {
+    @apply border-b border-stone-200;
+  }
+
+  .app-table-total-row {
+    @apply border-b border-stone-200 bg-stone-50 text-stone-900;
+  }
+
+  .app-table-row {
+    @apply border-b border-stone-200 bg-white text-stone-900;
+  }
+
+  .app-table-row-subtle {
+    @apply bg-stone-50/70;
+  }
+}
+
+main table {
+  background: #ffffff !important;
+}
+
+main table thead,
+main table thead tr,
+main table thead th {
+  background: #f8f8f7 !important;
+}
+
+main table tbody tr {
+  background: #ffffff !important;
+}
+
+main table tbody tr:first-child {
+  background: #f8f8f7 !important;
+}
+
+main table th,
+main table td {
+  border-color: #e7e5e4 !important;
+}
+
+
+:root {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #1b2430;
+  background:
+    radial-gradient(circle at top left, rgba(122, 177, 145, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(188, 223, 213, 0.35), transparent 22%),
+    radial-gradient(circle at bottom left, rgba(240, 227, 213, 0.7), transparent 24%),
+    linear-gradient(180deg, #eff8f4 0%, #f5f7fb 28%, #f7f0e8 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-attachment: fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(122, 177, 145, 0.28);
+}
