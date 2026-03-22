@@ -9,24 +9,18 @@
         </p>
       </div>
 
-      <form class="filters" @submit.prevent="applyFilters">
+      <div class="filters">
         <div class="field">
           <label for="account-id">Account ID</label>
           <input id="account-id" :value="accountId || ''" type="text" disabled />
         </div>
 
-        <div class="field">
-          <label for="date-from">Дата с</label>
-          <input id="date-from" v-model="form.date_from" type="date" />
-        </div>
-
-        <div class="field">
-          <label for="date-to">Дата по</label>
-          <input id="date-to" v-model="form.date_to" type="date" />
-        </div>
-
-        <button type="submit" class="primary-button">Применить</button>
-      </form>
+        <PeriodFilter
+          :date-from="form.date_from"
+          :date-to="form.date_to"
+          @apply="handlePeriodApply"
+        />
+      </div>
     </div>
 
     <div v-if="!accountId" class="message message-empty">
@@ -239,6 +233,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPeriodItems, getPeriodSizes } from '../api/economics'
+import PeriodFilter from '../components/PeriodFilter.vue'
 import type { EconomicsItem, EconomicsSizeItem, EconomicsTotals } from '../types/economics'
 
 const route = useRoute()
@@ -405,7 +400,7 @@ async function loadItems() {
   }
 }
 
-async function applyFilters() {
+async function handlePeriodApply(period: { date_from: string; date_to: string }) {
   if (!accountId.value) {
     return
   }
@@ -414,8 +409,8 @@ async function applyFilters() {
     path: '/economics',
     query: {
       account_id: accountId.value,
-      date_from: form.date_from,
-      date_to: form.date_to,
+      date_from: period.date_from,
+      date_to: period.date_to,
     },
   })
 }
