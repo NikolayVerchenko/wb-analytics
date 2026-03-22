@@ -119,3 +119,4 @@ class EconomicsPeriodTotalsRead(BaseModel):
 class EconomicsPeriodItemsResponse(BaseModel):
     items: list[EconomicsPeriodItemRead]
     totals: EconomicsPeriodTotalsRead
+

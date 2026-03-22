@@ -3,8 +3,21 @@ export type EconomicsItem = {
   vendor_code: string | null
   nm_id: number | null
   delivery_quantity?: number | null
+  refusal_quantity?: number | null
   sales_quantity: number | null
+  buyout_percent?: number | null
+  realization_before_spp?: number | null
+  spp_amount?: number | null
+  spp_percent?: number | null
   seller_transfer: number | null
+  wb_commission_amount?: number | null
+  wb_commission_percent?: number | null
+  delivery_cost?: number | null
+  paid_storage_cost?: number | null
+  acceptance_cost?: number | null
+  penalty_cost?: number | null
+  advert_cost?: number | null
+  tax_amount?: number | null
   cogs_amount: number | null
   profit_amount: number | null
   margin_percent: number | null
@@ -14,8 +27,21 @@ export type EconomicsItem = {
 export type EconomicsSizeItem = {
   ts_name?: string | null
   delivery_quantity?: number | null
+  refusal_quantity?: number | null
   sales_quantity: number | null
+  buyout_percent?: number | null
+  realization_before_spp?: number | null
+  spp_amount?: number | null
+  spp_percent?: number | null
   seller_transfer: number | null
+  wb_commission_amount?: number | null
+  wb_commission_percent?: number | null
+  delivery_cost?: number | null
+  paid_storage_cost?: number | null
+  acceptance_cost?: number | null
+  penalty_cost?: number | null
+  advert_cost?: number | null
+  tax_amount?: number | null
   cogs_amount: number | null
   profit_amount: number | null
   margin_percent: number | null
@@ -23,8 +49,22 @@ export type EconomicsSizeItem = {
 }
 
 export type EconomicsTotals = {
+  delivery_quantity?: number | null
+  refusal_quantity?: number | null
   sales_quantity?: number | null
+  buyout_percent?: number | null
+  realization_before_spp?: number | null
+  spp_amount?: number | null
+  spp_percent?: number | null
   seller_transfer?: number | null
+  wb_commission_amount?: number | null
+  wb_commission_percent?: number | null
+  delivery_cost?: number | null
+  paid_storage_cost?: number | null
+  acceptance_cost?: number | null
+  penalty_cost?: number | null
+  advert_cost?: number | null
+  tax_amount?: number | null
   cogs_amount?: number | null
   profit_amount?: number | null
   margin_percent?: number | null
