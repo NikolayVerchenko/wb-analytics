@@ -1,12 +1,23 @@
 export async function apiGet<T>(
   url: string,
-  params?: Record<string, string | number | boolean | null | undefined>,
+  params?: Record<string, string | number | boolean | string[] | null | undefined>,
 ): Promise<T> {
   const searchParams = new URLSearchParams()
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value === null || value === undefined || value === '') {
+        continue
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item === '') {
+            continue
+          }
+
+          searchParams.append(key, item)
+        }
         continue
       }
 

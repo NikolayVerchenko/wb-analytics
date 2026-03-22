@@ -120,3 +120,15 @@ class EconomicsPeriodItemsResponse(BaseModel):
     items: list[EconomicsPeriodItemRead]
     totals: EconomicsPeriodTotalsRead
 
+
+
+class EconomicsFilterOptionRead(BaseModel):
+    value: str
+    label: str
+    hint: str | None = None
+
+
+class EconomicsFilterOptionsResponse(BaseModel):
+    subjects: list[EconomicsFilterOptionRead]
+    brands: list[EconomicsFilterOptionRead]
+    articles: list[EconomicsFilterOptionRead]

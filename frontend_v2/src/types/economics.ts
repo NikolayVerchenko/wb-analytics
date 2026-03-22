@@ -80,6 +80,9 @@ export type GetPeriodItemsParams = {
   account_id: string
   date_from: string
   date_to: string
+  subjects?: string[]
+  brands?: string[]
+  articles?: string[]
 }
 
 export type GetPeriodSizesParams = {

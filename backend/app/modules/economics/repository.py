@@ -15,6 +15,9 @@ class EconomicsRepository:
         date_from: date,
         date_to: date,
         search: str | None,
+        subjects: list[str] | None,
+        brands: list[str] | None,
+        articles: list[str] | None,
         order_by: str,
         limit: int,
         offset: int,
@@ -195,6 +198,9 @@ class EconomicsRepository:
                     select *
                     from aggregated
                     where (%s::text is null or vendor_code ilike %s::text)
+                      and (%s::text[] is null or subject_name = any(%s::text[]))
+                      and (%s::text[] is null or brand_name = any(%s::text[]))
+                      and (%s::text[] is null or vendor_code = any(%s::text[]))
                       and (%s = false or profit_amount < 0)
                       and (%s::numeric is null or profit_amount >= %s::numeric)
                       and (%s::numeric is null or profit_amount <= %s::numeric)
@@ -214,6 +220,12 @@ class EconomicsRepository:
                 date_to,
                 search_value,
                 search_value,
+                subjects,
+                subjects,
+                brands,
+                brands,
+                articles,
+                articles,
                 only_negative_profit,
                 min_profit,
                 min_profit,
@@ -496,3 +508,105 @@ class EconomicsRepository:
                 ),
             )
             return list(cur.fetchall())
+
+
+    def list_filter_options(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+    ) -> dict:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                with closed_dates as (
+                    select distinct calendar_date
+                    from mart.sku_unit_economics_day_item_closed
+                    where account_id = %s
+                      and calendar_date between %s and %s
+                ),
+                all_items as (
+                    select
+                        subject_name,
+                        brand_name,
+                        vendor_code,
+                        nm_id
+                    from mart.sku_unit_economics_day_item_closed
+                    where account_id = %s
+                      and calendar_date between %s and %s
+
+                    union all
+
+                    select
+                        subject_name,
+                        brand_name,
+                        vendor_code,
+                        nm_id
+                    from mart.sku_unit_economics_day_item_current
+                    where account_id = %s
+                      and calendar_date between %s and %s
+                      and not exists (
+                        select 1
+                        from closed_dates cd
+                        where cd.calendar_date = mart.sku_unit_economics_day_item_current.calendar_date
+                      )
+                ),
+                subjects as (
+                    select distinct btrim(subject_name) as value
+                    from all_items
+                    where nullif(btrim(subject_name), '') is not null
+                ),
+                brands as (
+                    select distinct btrim(brand_name) as value
+                    from all_items
+                    where nullif(btrim(brand_name), '') is not null
+                ),
+                articles as (
+                    select
+                        btrim(vendor_code) as value,
+                        btrim(vendor_code) as label,
+                        nm_id::text as hint,
+                        row_number() over (
+                            partition by btrim(vendor_code)
+                            order by nm_id nulls last
+                        ) as rn
+                    from all_items
+                    where nullif(btrim(vendor_code), '') is not null
+                )
+                select
+                    coalesce(
+                        (
+                            select json_agg(json_build_object('value', value, 'label', value, 'hint', null) order by value)
+                            from subjects
+                        ),
+                        '[]'::json
+                    ) as subjects,
+                    coalesce(
+                        (
+                            select json_agg(json_build_object('value', value, 'label', value, 'hint', null) order by value)
+                            from brands
+                        ),
+                        '[]'::json
+                    ) as brands,
+                    coalesce(
+                        (
+                            select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label)
+                            from articles
+                            where rn = 1
+                        ),
+                        '[]'::json
+                    ) as articles
+                """,
+                (
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                    date_from,
+                    date_to,
+                ),
+            )
+            return cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}

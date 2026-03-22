@@ -7,6 +7,8 @@ import psycopg
 
 from backend.app.modules.economics.repository import EconomicsRepository
 from backend.app.modules.economics.schemas import (
+    EconomicsFilterOptionRead,
+    EconomicsFilterOptionsResponse,
     EconomicsPeriodItemRead,
     EconomicsPeriodItemsResponse,
     EconomicsPeriodSizeRead,
@@ -37,6 +39,9 @@ class EconomicsService:
         date_from: date,
         date_to: date,
         search: str | None,
+        subjects: list[str] | None,
+        brands: list[str] | None,
+        articles: list[str] | None,
         sort: str | None,
         limit: int,
         offset: int,
@@ -59,6 +64,9 @@ class EconomicsService:
             date_from,
             date_to,
             search,
+            subjects,
+            brands,
+            articles,
             order_by,
             limit,
             offset,
@@ -83,6 +91,23 @@ class EconomicsService:
 
         rows = self._repository.list_period_sizes(account_id, date_from, date_to, nm_id, vendor_code)
         return [EconomicsPeriodSizeRead.model_validate(row) for row in rows]
+
+
+    def list_filter_options(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+    ) -> EconomicsFilterOptionsResponse:
+        if date_from > date_to:
+            raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
+
+        row = self._repository.list_filter_options(account_id, date_from, date_to)
+        return EconomicsFilterOptionsResponse(
+            subjects=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('subjects', [])],
+            brands=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('brands', [])],
+            articles=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('articles', [])],
+        )
 
     def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
         sales_quantity = self._sum(items, 'sales_quantity')

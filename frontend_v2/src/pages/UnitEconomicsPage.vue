@@ -20,6 +20,15 @@
           :date-to="form.date_to"
           @apply="handlePeriodApply"
         />
+
+        <EconomicsFilters
+          :account-id="accountId"
+          :date-from="form.date_from"
+          :date-to="form.date_to"
+          :value="selectedFilters"
+          @apply="handleFiltersApply"
+          @reset="handleFiltersReset"
+        />
       </div>
     </div>
 
@@ -33,37 +42,6 @@
       <div v-else-if="items.length === 0" class="message message-empty">Нет данных за выбранный период.</div>
 
       <template v-else>
-        <div v-if="totals" class="card stack">
-          <h3>Итоги</h3>
-
-          <div class="totals">
-            <div class="totals-item">
-              <span class="totals-label">Продажи</span>
-              <span class="totals-value">{{ formatNumber(totals.sales_quantity) }}</span>
-            </div>
-            <div class="totals-item">
-              <span class="totals-label">К перечислению</span>
-              <span class="totals-value">{{ formatNumber(totals.seller_transfer) }}</span>
-            </div>
-            <div class="totals-item">
-              <span class="totals-label">Себестоимость</span>
-              <span class="totals-value">{{ formatNumber(totals.cogs_amount) }}</span>
-            </div>
-            <div class="totals-item">
-              <span class="totals-label">Прибыль</span>
-              <span class="totals-value">{{ formatNumber(totals.profit_amount) }}</span>
-            </div>
-            <div class="totals-item">
-              <span class="totals-label">Маржа, %</span>
-              <span class="totals-value">{{ formatPercent(totals.margin_percent) }}</span>
-            </div>
-            <div class="totals-item">
-              <span class="totals-label">ROI, %</span>
-              <span class="totals-value">{{ formatPercent(totals.roi_percent) }}</span>
-            </div>
-          </div>
-        </div>
-
         <div class="card stack">
           <h3>Товары</h3>
 
@@ -233,8 +211,10 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPeriodItems, getPeriodSizes } from '../api/economics'
+import EconomicsFilters from '../components/EconomicsFilters.vue'
 import PeriodFilter from '../components/PeriodFilter.vue'
 import type { EconomicsItem, EconomicsSizeItem, EconomicsTotals } from '../types/economics'
+import type { EconomicsFiltersValue } from '../types/filters'
 
 const route = useRoute()
 const router = useRouter()
@@ -247,6 +227,11 @@ const expandedItemKeys = ref<string[]>([])
 const sizesByItem = ref<Record<string, EconomicsSizeItem[]>>({})
 const sizesLoadingByItem = ref<Record<string, boolean>>({})
 const sizesErrorByItem = ref<Record<string, string>>({})
+const selectedFilters = ref<EconomicsFiltersValue>({
+  subjects: [],
+  brands: [],
+  articles: [],
+})
 
 const form = reactive({
   date_from: '',
@@ -282,10 +267,27 @@ function normalizeDateValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.length > 0 ? value : fallback
 }
 
+function normalizeQueryArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    return [value]
+  }
+
+  return []
+}
+
 function syncFormFromQuery() {
   const defaults = getDefaultDates()
   form.date_from = normalizeDateValue(route.query.date_from, defaults.date_from)
   form.date_to = normalizeDateValue(route.query.date_to, defaults.date_to)
+  selectedFilters.value = {
+    subjects: normalizeQueryArray(route.query.subjects),
+    brands: normalizeQueryArray(route.query.brands),
+    articles: normalizeQueryArray(route.query.articles),
+  }
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -387,6 +389,9 @@ async function loadItems() {
       account_id: accountId.value,
       date_from: form.date_from,
       date_to: form.date_to,
+      subjects: selectedFilters.value.subjects,
+      brands: selectedFilters.value.brands,
+      articles: selectedFilters.value.articles,
     })
 
     items.value = response.items ?? []
@@ -400,6 +405,39 @@ async function loadItems() {
   }
 }
 
+async function handleFiltersApply(filters: EconomicsFiltersValue) {
+  if (!accountId.value) {
+    return
+  }
+
+  await router.push({
+    path: '/economics',
+    query: {
+      account_id: accountId.value,
+      date_from: form.date_from,
+      date_to: form.date_to,
+      subjects: filters.subjects.length > 0 ? filters.subjects : undefined,
+      brands: filters.brands.length > 0 ? filters.brands : undefined,
+      articles: filters.articles.length > 0 ? filters.articles : undefined,
+    },
+  })
+}
+
+async function handleFiltersReset() {
+  if (!accountId.value) {
+    return
+  }
+
+  await router.push({
+    path: '/economics',
+    query: {
+      account_id: accountId.value,
+      date_from: form.date_from,
+      date_to: form.date_to,
+    },
+  })
+}
+
 async function handlePeriodApply(period: { date_from: string; date_to: string }) {
   if (!accountId.value) {
     return
@@ -411,6 +449,9 @@ async function handlePeriodApply(period: { date_from: string; date_to: string })
       account_id: accountId.value,
       date_from: period.date_from,
       date_to: period.date_to,
+      subjects: selectedFilters.value.subjects.length > 0 ? selectedFilters.value.subjects : undefined,
+      brands: selectedFilters.value.brands.length > 0 ? selectedFilters.value.brands : undefined,
+      articles: selectedFilters.value.articles.length > 0 ? selectedFilters.value.articles : undefined,
     },
   })
 }
