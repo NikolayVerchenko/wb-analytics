@@ -7,6 +7,7 @@ export type EconomicsItem = {
   sales_quantity: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null
+  realization_after_spp?: number | null
   spp_amount?: number | null
   spp_percent?: number | null
   seller_transfer: number | null
@@ -31,6 +32,7 @@ export type EconomicsSizeItem = {
   sales_quantity: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null
+  realization_after_spp?: number | null
   spp_amount?: number | null
   spp_percent?: number | null
   seller_transfer: number | null
@@ -54,6 +56,7 @@ export type EconomicsTotals = {
   sales_quantity?: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null
+  realization_after_spp?: number | null
   spp_amount?: number | null
   spp_percent?: number | null
   seller_transfer?: number | null

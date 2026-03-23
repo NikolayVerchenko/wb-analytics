@@ -1,5 +1,8 @@
 <template>
-  <div class="card stack">    <slot name="header">      <h3>Товары</h3>    </slot>
+  <div class="card stack">
+    <slot name="header">
+      <h3>Товары</h3>
+    </slot>
 
     <div class="table-wrapper">
       <table>
@@ -13,6 +16,7 @@
             <th><span>Количество</span><br /><span>продаж</span></th>
             <th>% выкупа</th>
             <th><span>Реализация</span><br /><span>до СПП</span></th>
+            <th><span>Реализация</span><br /><span>после СПП</span></th>
             <th>СПП</th>
             <th>% СПП</th>
             <th><span>Перечисления</span><br /><span>продавцу</span></th>
@@ -29,8 +33,6 @@
             <th>Маржа, %</th>
             <th>ROI, %</th>
           </tr>
-        </thead>
-        <tbody>
           <tr v-if="totals" class="totals-row">
             <td class="sticky-photo-cell"></td>
             <td class="article-column sticky-article-cell">
@@ -44,6 +46,7 @@
             <td class="numeric">{{ formatNumber(totals.sales_quantity) }}</td>
             <td class="numeric">{{ formatPercent(totals.buyout_percent) }}</td>
             <td class="numeric">{{ formatNumber(totals.realization_before_spp) }}</td>
+            <td class="numeric">{{ formatNumber(totals.realization_after_spp) }}</td>
             <td class="numeric">{{ formatNumber(totals.spp_amount) }}</td>
             <td class="numeric">{{ formatPercent(totals.spp_percent) }}</td>
             <td class="numeric">{{ formatNumber(totals.seller_transfer) }}</td>
@@ -60,6 +63,8 @@
             <td class="numeric">{{ formatPercent(totals.margin_percent) }}</td>
             <td class="numeric">{{ formatPercent(totals.roi_percent) }}</td>
           </tr>
+        </thead>
+        <tbody>
           <template v-for="item in items" :key="getItemKey(item)">
             <tr
               :class="{ 'item-row': canExpandItem(item), 'item-row-expanded': isExpanded(item) }"
@@ -86,6 +91,7 @@
               <td class="numeric">{{ formatNumber(item.sales_quantity) }}</td>
               <td class="numeric">{{ formatPercent(item.buyout_percent) }}</td>
               <td class="numeric">{{ formatNumber(item.realization_before_spp) }}</td>
+              <td class="numeric">{{ formatNumber(item.realization_after_spp) }}</td>
               <td class="numeric">{{ formatNumber(item.spp_amount) }}</td>
               <td class="numeric">{{ formatPercent(item.spp_percent) }}</td>
               <td class="numeric">{{ formatNumber(item.seller_transfer) }}</td>
@@ -104,19 +110,19 @@
             </tr>
 
             <tr v-if="isExpanded(item) && sizesLoadingByItem[getItemKey(item)]" class="sizes-row">
-              <td colspan="23">
+              <td colspan="24">
                 <div class="message message-info">Загрузка размеров...</div>
               </td>
             </tr>
 
             <tr v-else-if="isExpanded(item) && sizesErrorByItem[getItemKey(item)]" class="sizes-row">
-              <td colspan="23">
+              <td colspan="24">
                 <div class="message message-error">{{ sizesErrorByItem[getItemKey(item)] }}</div>
               </td>
             </tr>
 
             <tr v-else-if="isExpanded(item) && (sizesByItem[getItemKey(item)] ?? []).length === 0" class="sizes-row">
-              <td colspan="23">
+              <td colspan="24">
                 <div class="message message-empty">Размеры не найдены.</div>
               </td>
             </tr>
@@ -134,6 +140,7 @@
               <td class="numeric">{{ formatNumber(size.sales_quantity) }}</td>
               <td class="numeric">{{ formatPercent(size.buyout_percent) }}</td>
               <td class="numeric">{{ formatNumber(size.realization_before_spp) }}</td>
+              <td class="numeric">{{ formatNumber(size.realization_after_spp) }}</td>
               <td class="numeric">{{ formatNumber(size.spp_amount) }}</td>
               <td class="numeric">{{ formatPercent(size.spp_percent) }}</td>
               <td class="numeric">{{ formatNumber(size.seller_transfer) }}</td>
@@ -189,5 +196,3 @@ function isExpanded(item: EconomicsItem): boolean {
   return expandedItemKeysSet.value.has(getItemKey(item))
 }
 </script>
-
-
