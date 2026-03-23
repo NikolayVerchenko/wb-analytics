@@ -6,7 +6,9 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_snapshot
+from courier.raw_read import fetch_latest_single_payload
 
 
 SOURCE = "adverts"
@@ -31,37 +33,6 @@ def int_or_none(value: Any) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
-
-
-def get_latest_payload(conn: psycopg.Connection, account_id: uuid.UUID) -> tuple[uuid.UUID, list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select lr.load_id, ap.payload
-            from raw.load_runs lr
-            join raw.api_payloads ap on ap.load_id = lr.load_id
-            where lr.account_id = %s
-              and lr.source = %s
-              and lr.status = 'success'
-            order by lr.fetched_at desc, ap.id desc
-            limit 1
-            """,
-            (account_id, SOURCE),
-        )
-        row = cur.fetchone()
-    if not row:
-        raise RuntimeError("No successful raw adverts load found for the account")
-    payload = row[1]
-    adverts = payload.get("adverts") if isinstance(payload, dict) else None
-    if not isinstance(adverts, list):
-        raise RuntimeError("Expected payload.adverts to be a list")
-    return row[0], adverts
-
-
-def replace_snapshot(conn: psycopg.Connection, account_id: uuid.UUID) -> None:
-    with conn.cursor() as cur:
-        cur.execute("delete from core.advert_nms where account_id = %s", (account_id,))
-        cur.execute("delete from core.adverts where account_id = %s", (account_id,))
 
 
 def build_rows(
@@ -140,7 +111,7 @@ def insert_rows(
                 values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                 """,
                 advert_rows,
-                )
+            )
         if nm_rows:
             cur.executemany(
                 """
@@ -158,24 +129,34 @@ def insert_rows(
                 values (%s, %s, %s, %s, %s, %s, %s, %s, now())
                 """,
                 nm_rows,
-                )
+            )
 
 
 def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
 
-    with db_connection() as conn:
-        load_id, adverts = get_latest_payload(conn, account_id)
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload = fetch_latest_single_payload(conn, account_id=account_id, source=SOURCE)
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"Expected object payload, got {type(payload).__name__}")
+        adverts = payload.get("adverts") if isinstance(payload, dict) else None
+        if not isinstance(adverts, list):
+            raise RuntimeError("Expected payload.adverts to be a list")
         advert_rows, nm_rows = build_rows(account_id, load_id, adverts)
-        replace_snapshot(conn, account_id)
+        replace_account_snapshot(
+            conn,
+            account_id=account_id,
+            table_names=("core.advert_nms", "core.adverts"),
+        )
         insert_rows(conn, advert_rows, nm_rows)
-        conn.commit()
+        return CoreLoadResult(
+            source=SOURCE,
+            load_id=str(load_id),
+            metrics={"adverts": len(advert_rows), "advert_nms": len(nm_rows)},
+        )
 
-    print(
-        f"source={SOURCE} load_id={load_id} adverts={len(advert_rows)} advert_nms={len(nm_rows)}"
-    )
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:

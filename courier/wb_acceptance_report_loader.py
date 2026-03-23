@@ -7,7 +7,9 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_snapshot
+from courier.raw_read import fetch_latest_single_payload
 
 
 SOURCE = "acceptanceReport"
@@ -37,32 +39,6 @@ def int_or_none(value: Any) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
-
-
-def get_latest_payload(conn: psycopg.Connection, account_id: uuid.UUID) -> tuple[uuid.UUID, list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select lr.load_id, ap.payload
-            from raw.load_runs lr
-            join raw.api_payloads ap on ap.load_id = lr.load_id
-            where lr.account_id = %s
-              and lr.source = %s
-              and lr.status = 'success'
-            order by lr.fetched_at desc, ap.id desc
-            limit 1
-            """,
-            (account_id, SOURCE),
-        )
-        row = cur.fetchone()
-    if not row:
-        raise RuntimeError("No successful raw acceptance report load found for the account")
-    return row[0], row[1]
-
-
-def replace_snapshot(conn: psycopg.Connection, account_id: uuid.UUID) -> None:
-    with conn.cursor() as cur:
-        cur.execute("delete from core.acceptance_costs where account_id = %s", (account_id,))
 
 
 def build_rows(
@@ -119,15 +95,16 @@ def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
 
-    with db_connection() as conn:
-        load_id, payload = get_latest_payload(conn, account_id)
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload = fetch_latest_single_payload(conn, account_id=account_id, source=SOURCE)
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
         rows = build_rows(account_id, load_id, payload)
-        replace_snapshot(conn, account_id)
+        replace_account_snapshot(conn, account_id=account_id, table_names=("core.acceptance_costs",))
         insert_rows(conn, rows)
-        conn.commit()
+        return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
 
-    print(f"source={SOURCE} load_id={load_id} rows_loaded={len(rows)}")
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:

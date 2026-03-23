@@ -6,7 +6,10 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection, parse_iso_date
+from courier.common import parse_iso_date
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_exact_period
+from courier.raw_read import fetch_latest_payload_pages
 
 
 SOURCE = "salesFunnelProducts"
@@ -34,59 +37,6 @@ def int_or_none(value: Any) -> int | None:
     return int(value)
 
 
-def get_latest_payload_pages(
-    conn: psycopg.Connection,
-    account_id: uuid.UUID,
-    date_from,
-    date_to,
-) -> tuple[uuid.UUID, list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select lr.load_id
-            from raw.load_runs lr
-            where lr.account_id = %s
-              and lr.source = %s
-              and lr.status = 'success'
-              and lr.period_from = %s
-              and lr.period_to = %s
-              and lr.period_mode = 'range'
-            order by lr.fetched_at desc
-            limit 1
-            """,
-            (account_id, SOURCE, date_from, date_to),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise RuntimeError("No successful raw sales funnel load found for the requested period")
-        load_id = row[0]
-
-        cur.execute(
-            """
-            select payload
-            from raw.api_payloads
-            where load_id = %s
-            order by fetched_at, id
-            """,
-            (load_id,),
-        )
-        payload_rows = cur.fetchall()
-    return load_id, [item[0] for item in payload_rows]
-
-
-def replace_period(conn: psycopg.Connection, account_id, date_from, date_to) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            delete from core.product_funnel
-            where account_id = %s
-              and period_from = %s
-              and period_to = %s
-            """,
-            (account_id, date_from, date_to),
-        )
-
-
 def build_rows(
     account_id: uuid.UUID,
     load_id: uuid.UUID,
@@ -97,6 +47,8 @@ def build_rows(
     rows: list[tuple] = []
     seen_nm_ids: set[int] = set()
     for payload in payload_pages:
+        if not isinstance(payload, dict):
+            continue
         data = payload.get("data") or {}
         for item in data.get("products") or []:
             product = item.get("product") or {}
@@ -228,15 +180,29 @@ def run() -> int:
     if date_from > date_to:
         raise ValueError("date-from must be <= date-to")
 
-    with db_connection() as conn:
-        load_id, payload_pages = get_latest_payload_pages(conn, account_id, date_from, date_to)
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload_pages = fetch_latest_payload_pages(
+            conn,
+            account_id=account_id,
+            source=SOURCE,
+            period_from=date_from,
+            period_to=date_to,
+            period_mode="range",
+        )
         rows = build_rows(account_id, load_id, payload_pages, date_from, date_to)
-        replace_period(conn, account_id, date_from, date_to)
+        replace_account_exact_period(
+            conn,
+            table_name="core.product_funnel",
+            account_id=account_id,
+            period_from_column="period_from",
+            period_to_column="period_to",
+            period_from=date_from,
+            period_to=date_to,
+        )
         insert_rows(conn, rows)
-        conn.commit()
+        return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
 
-    print(f"source={SOURCE} load_id={load_id} rows_loaded={len(rows)}")
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:

@@ -7,7 +7,10 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection, parse_iso_date
+from courier.common import parse_iso_date
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_period_by_date_expression
+from courier.raw_read import fetch_latest_single_payload
 
 
 SOURCE = "advUpd"
@@ -34,53 +37,6 @@ def parse_upd_time(value: Any) -> datetime | None:
         return None
     normalized = str(value).replace("Z", "+00:00")
     return datetime.fromisoformat(normalized)
-
-
-def get_latest_payload(
-    conn: psycopg.Connection,
-    account_id: uuid.UUID,
-    date_from: date,
-    date_to: date,
-) -> tuple[uuid.UUID, list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select lr.load_id, ap.payload
-            from raw.load_runs lr
-            join raw.api_payloads ap on ap.load_id = lr.load_id
-            where lr.account_id = %s
-              and lr.source = %s
-              and lr.status = 'success'
-              and lr.period_from = %s
-              and lr.period_to = %s
-              and lr.period_mode = 'range'
-            order by lr.fetched_at desc, ap.id desc
-            limit 1
-            """,
-            (account_id, SOURCE, date_from, date_to),
-        )
-        row = cur.fetchone()
-    if not row:
-        raise RuntimeError("No successful raw advUpd load found for the requested period")
-    return row[0], row[1]
-
-
-def replace_period(
-    conn: psycopg.Connection,
-    account_id: uuid.UUID,
-    date_from: date,
-    date_to: date,
-) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            delete from core.advert_costs
-            where account_id = %s
-              and upd_time is not null
-              and upd_time::date between %s and %s
-            """,
-            (account_id, date_from, date_to),
-        )
 
 
 def build_rows(
@@ -142,15 +98,30 @@ def run() -> int:
     if date_from > date_to:
         raise ValueError("date-from must be <= date-to")
 
-    with db_connection() as conn:
-        load_id, payload = get_latest_payload(conn, account_id, date_from, date_to)
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload = fetch_latest_single_payload(
+            conn,
+            account_id=account_id,
+            source=SOURCE,
+            period_from=date_from,
+            period_to=date_to,
+            period_mode="range",
+        )
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
         rows = build_rows(account_id, load_id, payload, date_from, date_to)
-        replace_period(conn, account_id, date_from, date_to)
+        replace_account_period_by_date_expression(
+            conn,
+            table_name="core.advert_costs",
+            date_expression="upd_time::date",
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
         insert_rows(conn, rows)
-        conn.commit()
+        return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
 
-    print(f"source={SOURCE} load_id={load_id} rows_loaded={len(rows)}")
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:
@@ -163,4 +134,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

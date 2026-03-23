@@ -6,7 +6,9 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_snapshot
+from courier.raw_read import fetch_latest_payload_pages
 
 
 SOURCE = "cardsList"
@@ -37,49 +39,6 @@ def numeric_or_none(value: Any) -> Decimal | None:
     return Decimal(str(value))
 
 
-def get_latest_payload_pages(
-    conn: psycopg.Connection,
-    account_id: uuid.UUID,
-) -> tuple[uuid.UUID, list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select load_id
-            from raw.load_runs
-            where account_id = %s
-              and source = %s
-              and status = 'success'
-            order by fetched_at desc
-            limit 1
-            """,
-            (account_id, SOURCE),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise RuntimeError("No successful raw cardsList load found for the account")
-        load_id = row[0]
-
-        cur.execute(
-            """
-            select payload
-            from raw.api_payloads
-            where load_id = %s
-            order by fetched_at, id
-            """,
-            (load_id,),
-        )
-        payload_rows = cur.fetchall()
-    return load_id, [item[0] for item in payload_rows]
-
-
-def replace_cards_snapshot(conn: psycopg.Connection, account_id: uuid.UUID) -> None:
-    with conn.cursor() as cur:
-        cur.execute("delete from core.product_card_colors where account_id = %s", (account_id,))
-        cur.execute("delete from core.product_card_photos where account_id = %s", (account_id,))
-        cur.execute("delete from core.product_card_sizes where account_id = %s", (account_id,))
-        cur.execute("delete from core.product_cards where account_id = %s", (account_id,))
-
-
 def extract_colors(card: dict[str, Any]) -> list[str]:
     characteristics = card.get("characteristics") or []
     colors: list[str] = []
@@ -105,6 +64,8 @@ def build_rows(
     sizes_rows: list[tuple] = []
 
     for payload in payload_pages:
+        if not isinstance(payload, dict):
+            continue
         for card in payload.get("cards") or []:
             nm_id = card.get("nmID")
             if nm_id is None:
@@ -124,9 +85,7 @@ def build_rows(
             )
 
             for color_index, color in enumerate(extract_colors(card), start=1):
-                colors_rows.append(
-                    (account_id, int(nm_id), color, color_index, load_id)
-                )
+                colors_rows.append((account_id, int(nm_id), color, color_index, load_id))
 
             for photo_index, photo in enumerate(card.get("photos") or [], start=1):
                 photo_url = (
@@ -138,9 +97,7 @@ def build_rows(
                 )
                 if not photo_url:
                     continue
-                photos_rows.append(
-                    (account_id, int(nm_id), photo_index, photo_url, load_id)
-                )
+                photos_rows.append((account_id, int(nm_id), photo_index, photo_url, load_id))
 
             seen_sizes: set[str] = set()
             for size in card.get("sizes") or []:
@@ -148,9 +105,7 @@ def build_rows(
                 if not tech_size or tech_size in seen_sizes:
                     continue
                 seen_sizes.add(tech_size)
-                sizes_rows.append(
-                    (account_id, int(nm_id), tech_size, len(seen_sizes), load_id)
-                )
+                sizes_rows.append((account_id, int(nm_id), tech_size, len(seen_sizes), load_id))
 
     deduped_cards: dict[tuple[uuid.UUID, int], tuple] = {}
     for row in cards_rows:
@@ -235,20 +190,32 @@ def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
 
-    with db_connection() as conn:
-        load_id, payload_pages = get_latest_payload_pages(conn, account_id)
-        cards_rows, colors_rows, photos_rows, sizes_rows = build_rows(
-            account_id, load_id, payload_pages
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload_pages = fetch_latest_payload_pages(conn, account_id=account_id, source=SOURCE)
+        cards_rows, colors_rows, photos_rows, sizes_rows = build_rows(account_id, load_id, payload_pages)
+        replace_account_snapshot(
+            conn,
+            account_id=account_id,
+            table_names=(
+                "core.product_card_colors",
+                "core.product_card_photos",
+                "core.product_card_sizes",
+                "core.product_cards",
+            ),
         )
-        replace_cards_snapshot(conn, account_id)
         insert_rows(conn, cards_rows, colors_rows, photos_rows, sizes_rows)
-        conn.commit()
+        return CoreLoadResult(
+            source=SOURCE,
+            load_id=str(load_id),
+            metrics={
+                "cards": len(cards_rows),
+                "colors": len(colors_rows),
+                "photos": len(photos_rows),
+                "sizes": len(sizes_rows),
+            },
+        )
 
-    print(
-        f"source={SOURCE} load_id={load_id} cards={len(cards_rows)} "
-        f"colors={len(colors_rows)} photos={len(photos_rows)} sizes={len(sizes_rows)}"
-    )
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:

@@ -6,7 +6,9 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_snapshot
+from courier.raw_read import fetch_latest_payload_pages
 
 
 SOURCE = "supplies"
@@ -32,44 +34,12 @@ def int_or_none(value: Any) -> int | None:
     return int(value)
 
 
-def get_latest_payload_pages(conn: psycopg.Connection, account_id: uuid.UUID) -> tuple[uuid.UUID, list[list[dict[str, Any]]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select load_id
-            from raw.load_runs
-            where account_id = %s and source = %s and status = 'success'
-            order by fetched_at desc
-            limit 1
-            """,
-            (account_id, SOURCE),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise RuntimeError("No successful raw supplies load found for the account")
-        load_id = row[0]
-        cur.execute(
-            """
-            select payload
-            from raw.api_payloads
-            where load_id = %s
-            order by fetched_at, id
-            """,
-            (load_id,),
-        )
-        payload_rows = cur.fetchall()
-    return load_id, [item[0] for item in payload_rows]
-
-
-def replace_snapshot(conn: psycopg.Connection, account_id: uuid.UUID) -> None:
-    with conn.cursor() as cur:
-        cur.execute("delete from core.supplies where account_id = %s", (account_id,))
-
-
 def build_rows(account_id: uuid.UUID, load_id: uuid.UUID, payload_pages: list[list[dict[str, Any]]]) -> list[tuple]:
     rows: list[tuple] = []
     seen_preorders: set[int] = set()
     for page in payload_pages:
+        if not isinstance(page, list):
+            continue
         for item in page:
             preorder_id = item.get("preorderID")
             if preorder_id is None:
@@ -113,14 +83,15 @@ def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
 def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
-    with db_connection() as conn:
-        load_id, payload_pages = get_latest_payload_pages(conn, account_id)
+
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload_pages = fetch_latest_payload_pages(conn, account_id=account_id, source=SOURCE)
         rows = build_rows(account_id, load_id, payload_pages)
-        replace_snapshot(conn, account_id)
+        replace_account_snapshot(conn, account_id=account_id, table_names=("core.supplies",))
         insert_rows(conn, rows)
-        conn.commit()
-    print(f"source={SOURCE} load_id={load_id} rows_loaded={len(rows)}")
-    return 0
+        return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
+
+    return run_core_load(load)
 
 
 def main() -> None:

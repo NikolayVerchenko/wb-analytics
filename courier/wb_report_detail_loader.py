@@ -7,7 +7,10 @@ from typing import Any
 
 import psycopg
 
-from courier.common import db_connection, get_week_start, parse_iso_date
+from courier.common import get_week_start, parse_iso_date
+from courier.core_load_runner import CoreLoadResult, run_core_load
+from courier.core_replace import replace_account_period_by_date_column
+from courier.raw_read import fetch_latest_payload_pages
 
 
 SOURCE = "reportDetailByPeriod"
@@ -38,73 +41,6 @@ def int_or_none(value: Any) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
-
-
-def get_latest_raw_load_id(
-    conn: psycopg.Connection,
-    account_id: uuid.UUID,
-    mode: str,
-    date_from: date,
-    date_to: date,
-    week_start: date,
-) -> uuid.UUID:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select load_id
-            from raw.load_runs
-            where account_id = %s
-              and source = %s
-              and period_from = %s
-              and period_to = %s
-              and status = 'success'
-              and period_mode = %s
-              and week_start = %s
-            order by fetched_at desc
-            limit 1
-            """,
-            (account_id, SOURCE, date_from, date_to, mode, week_start),
-        )
-        row = cur.fetchone()
-    if not row:
-        raise RuntimeError(
-            "No successful raw load found for the requested account/period/mode"
-        )
-    return row[0]
-
-
-def replace_core_period_data(
-    conn: psycopg.Connection,
-    table_name: str,
-    account_id: uuid.UUID,
-    date_from: date,
-    date_to: date,
-) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            delete from {table_name}
-            where account_id = %s
-              and rr_dt >= %s
-              and rr_dt <= %s
-            """,
-            (account_id, date_from, date_to),
-        )
-
-
-def fetch_payload_pages(conn: psycopg.Connection, load_id: uuid.UUID) -> list[list[dict[str, Any]]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select payload
-            from raw.api_payloads
-            where load_id = %s
-            order by fetched_at, id
-            """,
-            (load_id,),
-        )
-        rows = cur.fetchall()
-    return [row[0] for row in rows]
 
 
 def map_payload_item(account_id: uuid.UUID, item: dict[str, Any]) -> tuple:
@@ -221,29 +157,37 @@ def run() -> int:
     week_start = get_week_start(date_from)
     table_name = TARGET_TABLES[args.mode]
 
-    with db_connection() as conn:
-        load_id = get_latest_raw_load_id(
-            conn=conn,
+    def load(conn: psycopg.Connection) -> CoreLoadResult:
+        load_id, payload_pages = fetch_latest_payload_pages(
+            conn,
             account_id=account_id,
-            mode=args.mode,
-            date_from=date_from,
-            date_to=date_to,
+            source=SOURCE,
+            period_from=date_from,
+            period_to=date_to,
+            period_mode=args.mode,
             week_start=week_start,
         )
-        payload_pages = fetch_payload_pages(conn, load_id)
         rows: list[tuple] = []
         for page in payload_pages:
             for item in page:
                 rows.append(map_payload_item(account_id, item))
 
-        replace_core_period_data(conn, table_name, account_id, date_from, date_to)
+        replace_account_period_by_date_column(
+            conn,
+            table_name=table_name,
+            date_column="rr_dt",
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
         insert_core_rows(conn, table_name, rows)
-        conn.commit()
+        return CoreLoadResult(
+            source=SOURCE,
+            load_id=str(load_id),
+            metrics={"mode": args.mode, "table": table_name, "rows_loaded": len(rows)},
+        )
 
-    print(
-        f"mode={args.mode} table={table_name} load_id={load_id} rows_loaded={len(rows)}"
-    )
-    return 0
+    return run_core_load(load)
 
 
 def main() -> None:
