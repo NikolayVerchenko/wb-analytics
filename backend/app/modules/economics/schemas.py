@@ -1,6 +1,6 @@
+from decimal import Decimal
 from datetime import date
 from uuid import UUID
-from decimal import Decimal
 
 from pydantic import BaseModel
 
@@ -132,3 +132,20 @@ class EconomicsFilterOptionsResponse(BaseModel):
     subjects: list[EconomicsFilterOptionRead]
     brands: list[EconomicsFilterOptionRead]
     articles: list[EconomicsFilterOptionRead]
+
+
+class EconomicsDashboardMetricRead(BaseModel):
+    key: str
+    label: str
+    current: Decimal | None
+    previous: Decimal | None = None
+    delta: Decimal | None = None
+    delta_percent: Decimal | None = None
+
+
+class EconomicsDashboardResponse(BaseModel):
+    date_from: date
+    date_to: date
+    previous_date_from: date | None = None
+    previous_date_to: date | None = None
+    metrics: list[EconomicsDashboardMetricRead]

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -7,6 +7,8 @@ import psycopg
 
 from backend.app.modules.economics.repository import EconomicsRepository
 from backend.app.modules.economics.schemas import (
+    EconomicsDashboardMetricRead,
+    EconomicsDashboardResponse,
     EconomicsFilterOptionRead,
     EconomicsFilterOptionsResponse,
     EconomicsPeriodItemRead,
@@ -17,6 +19,28 @@ from backend.app.modules.economics.schemas import (
 
 
 class EconomicsService:
+    _DASHBOARD_METRICS: tuple[tuple[str, str], ...] = (
+        ('sales_quantity', 'Продажи'),
+        ('delivery_quantity', 'Количество доставок'),
+        ('refusal_quantity', 'Количество отказов'),
+        ('buyout_percent', '% выкупа'),
+        ('realization_before_spp', 'Реализация до СПП'),
+        ('spp_amount', 'СПП'),
+        ('spp_percent', '% СПП'),
+        ('seller_transfer', 'Перечисления продавцу'),
+        ('wb_commission_amount', 'Комиссия ВБ'),
+        ('wb_commission_percent', '% комиссии ВБ'),
+        ('delivery_cost', 'Логистика'),
+        ('paid_storage_cost', 'Хранение'),
+        ('acceptance_cost', 'Платная приемка'),
+        ('penalty_cost', 'Штрафы'),
+        ('advert_cost', 'Реклама'),
+        ('tax_amount', 'Налог'),
+        ('cogs_amount', 'Себестоимость'),
+        ('profit_amount', 'Прибыль'),
+        ('margin_percent', 'Маржа, %'),
+        ('roi_percent', 'ROI, %'),
+    )
     _SORT_MAP = {
         'vendor_code_asc': 'vendor_code asc nulls last, nm_id',
         'vendor_code_desc': 'vendor_code desc nulls last, nm_id',
@@ -109,6 +133,73 @@ class EconomicsService:
             articles=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('articles', [])],
         )
 
+    def get_dashboard(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+        subjects: list[str] | None,
+        brands: list[str] | None,
+        articles: list[str] | None,
+        compare_previous: bool,
+    ) -> EconomicsDashboardResponse:
+        if date_from > date_to:
+            raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
+
+        current_totals = EconomicsPeriodTotalsRead.model_validate(
+            self._repository.get_period_totals(
+                account_id=account_id,
+                date_from=date_from,
+                date_to=date_to,
+                search=None,
+                subjects=subjects,
+                brands=brands,
+                articles=articles,
+                only_negative_profit=False,
+                min_profit=None,
+                max_profit=None,
+            )
+        )
+
+        previous_date_from: date | None = None
+        previous_date_to: date | None = None
+        previous_totals: EconomicsPeriodTotalsRead | None = None
+
+        if compare_previous:
+            previous_date_from, previous_date_to = self._build_previous_period(date_from, date_to)
+            previous_totals = EconomicsPeriodTotalsRead.model_validate(
+                self._repository.get_period_totals(
+                    account_id=account_id,
+                    date_from=previous_date_from,
+                    date_to=previous_date_to,
+                    search=None,
+                    subjects=subjects,
+                    brands=brands,
+                    articles=articles,
+                    only_negative_profit=False,
+                    min_profit=None,
+                    max_profit=None,
+                )
+            )
+
+        metrics = [
+            self._build_dashboard_metric(
+                key=key,
+                label=label,
+                current=getattr(current_totals, key),
+                previous=getattr(previous_totals, key) if previous_totals is not None else None,
+            )
+            for key, label in self._DASHBOARD_METRICS
+        ]
+
+        return EconomicsDashboardResponse(
+            date_from=date_from,
+            date_to=date_to,
+            previous_date_from=previous_date_from,
+            previous_date_to=previous_date_to,
+            metrics=metrics,
+        )
+
     def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
         sales_quantity = self._sum(items, 'sales_quantity')
         delivery_quantity = self._sum(items, 'delivery_quantity')
@@ -165,3 +256,34 @@ class EconomicsService:
         if denominator == 0:
             return None
         return ((numerator / denominator) * Decimal('100')).quantize(Decimal('0.01'))
+
+    @staticmethod
+    def _build_previous_period(date_from: date, date_to: date) -> tuple[date, date]:
+        period_days = (date_to - date_from).days + 1
+        previous_date_to = date_from - timedelta(days=1)
+        previous_date_from = previous_date_to - timedelta(days=period_days - 1)
+        return previous_date_from, previous_date_to
+
+    @staticmethod
+    def _build_dashboard_metric(
+        key: str,
+        label: str,
+        current: Decimal | None,
+        previous: Decimal | None,
+    ) -> EconomicsDashboardMetricRead:
+        delta: Decimal | None = None
+        delta_percent: Decimal | None = None
+
+        if current is not None and previous is not None:
+            delta = (current - previous).quantize(Decimal('0.01'))
+            if previous != 0:
+                delta_percent = ((delta / previous) * Decimal('100')).quantize(Decimal('0.01'))
+
+        return EconomicsDashboardMetricRead(
+            key=key,
+            label=label,
+            current=current,
+            previous=previous,
+            delta=delta,
+            delta_percent=delta_percent,
+        )

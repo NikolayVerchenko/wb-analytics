@@ -1,6 +1,5 @@
 <template>
-  <div class="card stack">
-    <h3>Товары</h3>
+  <div class="card stack">    <slot name="header">      <h3>Товары</h3>    </slot>
 
     <div class="table-wrapper">
       <table>
@@ -190,3 +189,5 @@ function isExpanded(item: EconomicsItem): boolean {
   return expandedItemKeysSet.value.has(getItemKey(item))
 }
 </script>
+
+

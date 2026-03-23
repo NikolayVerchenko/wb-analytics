@@ -7,6 +7,7 @@ import psycopg
 
 from backend.app.db import db_connection
 from backend.app.modules.economics.schemas import (
+    EconomicsDashboardResponse,
     EconomicsFilterOptionsResponse,
     EconomicsPeriodItemsResponse,
     EconomicsPeriodSizeRead,
@@ -70,3 +71,25 @@ def list_filter_options(
     conn: psycopg.Connection = Depends(db_connection),
 ) -> EconomicsFilterOptionsResponse:
     return EconomicsService(conn).list_filter_options(account_id, date_from, date_to)
+
+
+@router.get('/dashboard', response_model=EconomicsDashboardResponse)
+def get_dashboard(
+    account_id: UUID = Query(...),
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    subjects: list[str] | None = Query(None),
+    brands: list[str] | None = Query(None),
+    articles: list[str] | None = Query(None),
+    compare_previous: bool = Query(True),
+    conn: psycopg.Connection = Depends(db_connection),
+) -> EconomicsDashboardResponse:
+    return EconomicsService(conn).get_dashboard(
+        account_id=account_id,
+        date_from=date_from,
+        date_to=date_to,
+        subjects=subjects,
+        brands=brands,
+        articles=articles,
+        compare_previous=compare_previous,
+    )

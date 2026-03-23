@@ -1,47 +1,86 @@
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
+import { useEconomicsDashboard } from './useEconomicsDashboard'
+import { useEconomicsDashboardQueryState } from './useEconomicsDashboardQueryState'
 import { useEconomicsItems } from './useEconomicsItems'
-import { useEconomicsQueryState } from './useEconomicsQueryState'
 import { useEconomicsSizes } from './useEconomicsSizes'
+import { useEconomicsTableQueryState } from './useEconomicsTableQueryState'
 
 export function useEconomicsPage() {
-  const queryState = useEconomicsQueryState()
+  const tableQueryState = useEconomicsTableQueryState()
+  const dashboardQueryState = useEconomicsDashboardQueryState()
   const itemsState = useEconomicsItems()
+  const dashboardState = useEconomicsDashboard()
   const sizesState = useEconomicsSizes({
-    accountId: () => queryState.accountId.value,
-    dateFrom: () => queryState.form.value.date_from,
-    dateTo: () => queryState.form.value.date_to,
+    accountId: () => tableQueryState.accountId.value,
+    dateFrom: () => tableQueryState.form.value.date_from,
+    dateTo: () => tableQueryState.form.value.date_to,
   })
 
+  const tableLoading = computed(() => itemsState.loading.value)
+  const tableError = computed(() => itemsState.error.value)
+  const tableEmpty = computed(() => !tableLoading.value && !tableError.value && itemsState.items.value.length === 0)
+
+  const dashboardLoading = computed(() => dashboardState.loading.value)
+  const dashboardError = computed(() => dashboardState.error.value)
+  const dashboardEmpty = computed(
+    () => !dashboardLoading.value && !dashboardError.value && dashboardState.dashboardMetrics.value.length === 0,
+  )
+
   watch(
-    () => queryState.route.query,
+    () => tableQueryState.route.query,
     async () => {
-      queryState.syncStateFromQuery()
-      await itemsState.loadItems({
-        accountId: queryState.accountId.value,
-        dateFrom: queryState.form.value.date_from,
-        dateTo: queryState.form.value.date_to,
-        filters: queryState.selectedFilters.value,
-        resetDetails: sizesState.resetSizesState,
+      tableQueryState.syncStateFromQuery()
+      dashboardQueryState.syncStateFromQuery({
+        date_from: tableQueryState.form.value.date_from,
+        date_to: tableQueryState.form.value.date_to,
+        filters: tableQueryState.selectedFilters.value,
       })
+
+      await Promise.all([
+        itemsState.loadItems({
+          accountId: tableQueryState.accountId.value,
+          dateFrom: tableQueryState.form.value.date_from,
+          dateTo: tableQueryState.form.value.date_to,
+          filters: tableQueryState.selectedFilters.value,
+          resetDetails: sizesState.resetSizesState,
+        }),
+        dashboardState.loadDashboard({
+          accountId: dashboardQueryState.accountId.value,
+          dateFrom: dashboardQueryState.form.value.date_from,
+          dateTo: dashboardQueryState.form.value.date_to,
+          filters: dashboardQueryState.selectedFilters.value,
+        }),
+      ])
     },
     { immediate: true },
   )
 
   return {
-    accountId: queryState.accountId,
-    form: queryState.form,
-    selectedFilters: queryState.selectedFilters,
+    accountId: tableQueryState.accountId,
+    form: tableQueryState.form,
+    selectedFilters: tableQueryState.selectedFilters,
+    dashboardForm: dashboardQueryState.form,
+    dashboardSelectedFilters: dashboardQueryState.selectedFilters,
     items: itemsState.items,
     totals: itemsState.totals,
-    loading: itemsState.loading,
-    error: itemsState.error,
+    dashboard: dashboardState.dashboard,
+    dashboardMetrics: dashboardState.dashboardMetrics,
+    tableLoading,
+    tableError,
+    tableEmpty,
+    dashboardLoading,
+    dashboardError,
+    dashboardEmpty,
     expandedItemKeys: sizesState.expandedItemKeys,
     sizesByItem: sizesState.sizesByItem,
     sizesLoadingByItem: sizesState.sizesLoadingByItem,
     sizesErrorByItem: sizesState.sizesErrorByItem,
     toggleItem: sizesState.toggleItem,
-    handleFiltersApply: queryState.handleFiltersApply,
-    handleFiltersReset: queryState.handleFiltersReset,
-    handlePeriodApply: queryState.handlePeriodApply,
+    handleFiltersApply: tableQueryState.handleFiltersApply,
+    handleFiltersReset: tableQueryState.handleFiltersReset,
+    handlePeriodApply: tableQueryState.handlePeriodApply,
+    handleDashboardFiltersApply: dashboardQueryState.handleFiltersApply,
+    handleDashboardFiltersReset: dashboardQueryState.handleFiltersReset,
+    handleDashboardPeriodApply: dashboardQueryState.handlePeriodApply,
   }
 }

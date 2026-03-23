@@ -55,8 +55,8 @@ function getDefaultPeriod() {
   dateFromValue.setDate(today.getDate() - 30)
 
   return {
-    date_from: formatDate(dateFromValue),
-    date_to: dateTo,
+    table_date_from: formatDate(dateFromValue),
+    table_date_to: dateTo,
   }
 }
 
@@ -85,6 +85,3 @@ async function loadAccounts() {
 
 onMounted(loadAccounts)
 </script>
-
-
-
