@@ -14,6 +14,7 @@ def main() -> None:
         Path("db/marts/facts/fact_deductions_day_unallocated.sql"),
         Path("db/marts/facts/fact_unit_economics_day_size_closed.sql"),
         Path("db/marts/facts/fact_unit_economics_day_size_current.sql"),
+        Path("db/marts/facts/fact_unit_economics_weekly_size_closed.sql"),
         Path("db/marts/final/supply_items.sql"),
         Path("db/marts/final/sku_unit_economics.sql"),
         Path("db/marts/final/sku_unit_economics_weekly.sql"),
