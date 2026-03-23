@@ -1,15 +1,14 @@
 import argparse
 import sys
-import time
 import uuid
-from datetime import datetime, date
 
 import psycopg
-import requests
 
 from courier.common import db_connection, get_token, parse_iso_date
-from courier.raw_io import create_raw_load_run, insert_raw_payload, update_raw_load_run
-from courier.raw_period_replace import replace_raw_period_data
+from courier.raw_io import insert_raw_payload
+from courier.raw_load_runner import RawLoadRunner
+from courier.wb_api_client import WbApiClient
+from courier.wb_task_report import download_task, start_task, wait_task_done
 
 
 CREATE_ENDPOINT = "https://seller-analytics-api.wildberries.ru/api/v1/acceptance_report"
@@ -32,25 +31,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-interval", type=int, default=5)
     parser.add_argument("--max-attempts", type=int, default=36)
     return parser.parse_args()
-
-
-def create_load_run(
-    conn: psycopg.Connection,
-    load_id: uuid.UUID,
-    account_id: uuid.UUID,
-    date_from: date,
-    date_to: date,
-) -> None:
-    create_raw_load_run(
-        conn,
-        load_id=load_id,
-        account_id=account_id,
-        source=SOURCE,
-        period_from=date_from,
-        period_to=date_to,
-        period_mode="range",
-        week_start=date_from,
-    )
 
 
 def extract_task_id(payload: dict) -> str:
@@ -84,130 +64,28 @@ def run() -> int:
     load_id = uuid.uuid4()
 
     with db_connection() as conn:
+        runner = RawLoadRunner(conn=conn, load_id=load_id, account_id=account_id, source=SOURCE, period_from=date_from, period_to=date_to, period_mode="range", week_start=date_from)
         try:
             token = get_token(conn, account_id)
-            replace_raw_period_data(
-                conn,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode="range",
-                week_start=date_from,
-            )
-            create_load_run(conn, load_id, account_id, date_from, date_to)
-            conn.commit()
-
-            create_response = requests.get(
-                CREATE_ENDPOINT,
-                headers={"Authorization": token},
-                params={
-                    "dateFrom": date_from.isoformat(),
-                    "dateTo": date_to.isoformat(),
-                },
-                timeout=60,
-            )
-            if create_response.status_code != 200:
-                error_text = (create_response.text or "").strip() or f"HTTP {create_response.status_code}"
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=error_text)
-                conn.commit()
-                print(f"source={SOURCE} step=create http_status={create_response.status_code}")
-                return 1
-
-            task_id = extract_task_id(create_response.json())
-            print(f"source={SOURCE} step=create http_status=200 task_id={task_id}")
-
-            for attempt in range(1, args.max_attempts + 1):
-                status_response = requests.get(
-                    STATUS_ENDPOINT.format(task_id=task_id),
-                    headers={"Authorization": token},
-                    timeout=60,
-                )
-                if status_response.status_code != 200:
-                    error_text = (status_response.text or "").strip() or f"HTTP {status_response.status_code}"
-                    update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=error_text)
-                    conn.commit()
-                    print(
-                        f"source={SOURCE} step=status http_status={status_response.status_code} "
-                        f"attempt={attempt} task_id={task_id}"
-                    )
-                    return 1
-
-                status = extract_status(status_response.json())
-                print(
-                    f"source={SOURCE} step=status http_status=200 attempt={attempt} "
-                    f"task_id={task_id} status={status}"
-                )
-                if status == "done":
-                    break
-                if status in {"error", "failed"}:
-                    raise RuntimeError(f"Acceptance report task failed with status={status}")
-                time.sleep(args.poll_interval)
-            else:
-                raise RuntimeError("Acceptance report task polling timed out")
-
-            download_response = requests.get(
-                DOWNLOAD_ENDPOINT.format(task_id=task_id),
-                headers={"Authorization": token},
-                timeout=60,
-            )
+            client = WbApiClient(token=token, timeout=60, max_retries=3, backoff_seconds=2.0)
+            runner.start()
+            task_id = start_task(client=client, source=SOURCE, create_url=CREATE_ENDPOINT, create_params={"dateFrom": date_from.isoformat(), "dateTo": date_to.isoformat()}, extract_task_id=extract_task_id)
+            wait_task_done(client=client, source=SOURCE, task_id=task_id, status_url_template=STATUS_ENDPOINT, extract_status=extract_status, poll_interval=args.poll_interval, max_attempts=args.max_attempts, task_label="Acceptance report")
+            download_response = download_task(client=client, task_id=task_id, download_url_template=DOWNLOAD_ENDPOINT, expected_statuses={200, 204})
             if download_response.status_code == 204:
-                insert_raw_payload(
-                    conn,
-                    load_id=load_id,
-                    account_id=account_id,
-                    source=SOURCE,
-                    request_params={
-                        "task_id": task_id,
-                        "dateFrom": date_from.isoformat(),
-                        "dateTo": date_to.isoformat(),
-                        "snapshot_date": date_from.isoformat(),
-                    },
-                    payload=[],
-                    period_mode="range",
-                    week_start=date_from,
-                )
-                update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=0, error=None)
-                conn.commit()
+                insert_raw_payload(conn, load_id=load_id, account_id=account_id, source=SOURCE, request_params={"task_id": task_id, "dateFrom": date_from.isoformat(), "dateTo": date_to.isoformat(), "snapshot_date": date_from.isoformat()}, payload=[], period_mode="range", week_start=date_from)
+                runner.succeed(0)
                 print(f"source={SOURCE} step=download http_status=204 rows_loaded=0")
                 return 0
-            if download_response.status_code != 200:
-                error_text = (download_response.text or "").strip() or f"HTTP {download_response.status_code}"
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=error_text)
-                conn.commit()
-                print(f"source={SOURCE} step=download http_status={download_response.status_code}")
-                return 1
-
             payload = download_response.json()
             if not isinstance(payload, list):
                 raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
-
-            insert_raw_payload(
-                conn,
-                load_id=load_id,
-                account_id=account_id,
-                source=SOURCE,
-                request_params={
-                    "task_id": task_id,
-                    "dateFrom": date_from.isoformat(),
-                    "dateTo": date_to.isoformat(),
-                    "snapshot_date": date_from.isoformat(),
-                },
-                payload=payload,
-                period_mode="range",
-                week_start=date_from,
-            )
-            update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=len(payload), error=None)
-            conn.commit()
+            insert_raw_payload(conn, load_id=load_id, account_id=account_id, source=SOURCE, request_params={"task_id": task_id, "dateFrom": date_from.isoformat(), "dateTo": date_to.isoformat(), "snapshot_date": date_from.isoformat()}, payload=payload, period_mode="range", week_start=date_from)
+            runner.succeed(len(payload))
             print(f"source={SOURCE} step=download http_status=200 rows_loaded={len(payload)}")
             return 0
         except Exception as exc:
-            conn.rollback()
-            try:
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=str(exc))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            runner.fail(rows_loaded=0, error=str(exc))
             raise
 
 

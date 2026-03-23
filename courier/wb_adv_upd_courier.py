@@ -1,14 +1,13 @@
 import argparse
 import sys
 import uuid
-from datetime import date
 
 import psycopg
-import requests
 
 from courier.common import db_connection, get_token, parse_iso_date
-from courier.raw_io import create_raw_load_run, insert_raw_payload, update_raw_load_run
-from courier.raw_period_replace import replace_raw_period_data
+from courier.raw_io import insert_raw_payload
+from courier.raw_load_runner import RawLoadRunner
+from courier.wb_api_client import WbApiClient
 
 
 ENDPOINT = "https://advert-api.wildberries.ru/adv/v1/upd"
@@ -37,42 +36,26 @@ def run() -> int:
     request_params = {"from": date_from.isoformat(), "to": date_to.isoformat()}
 
     with db_connection() as conn:
+        runner = RawLoadRunner(
+            conn=conn,
+            load_id=load_id,
+            account_id=account_id,
+            source=SOURCE,
+            period_from=date_from,
+            period_to=date_to,
+            period_mode="range",
+            week_start=date_from,
+        )
         try:
             token = get_token(conn, account_id)
-            replace_raw_period_data(
-                conn,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode="range",
-                week_start=date_from,
-            )
-            create_raw_load_run(
-                conn,
-                load_id=load_id,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode="range",
-                week_start=date_from,
-            )
-            conn.commit()
+            client = WbApiClient(token=token, timeout=60, max_retries=3, backoff_seconds=2.0)
+            runner.start()
 
-            response = requests.get(
+            response = client.get(
                 ENDPOINT,
-                headers={"Authorization": token},
                 params=request_params,
-                timeout=60,
+                expected_statuses={200},
             )
-            if response.status_code != 200:
-                error_text = (response.text or "").strip() or f"HTTP {response.status_code}"
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=error_text)
-                conn.commit()
-                print(f"source={SOURCE} http_status={response.status_code} rows_loaded=0")
-                return 1
-
             payload = response.json()
             if not isinstance(payload, list):
                 raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
@@ -87,17 +70,11 @@ def run() -> int:
                 period_mode="range",
                 week_start=date_from,
             )
-            update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=len(payload), error=None)
-            conn.commit()
+            runner.succeed(len(payload))
             print(f"source={SOURCE} http_status=200 rows_loaded={len(payload)}")
             return 0
         except Exception as exc:
-            conn.rollback()
-            try:
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=0, error=str(exc))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            runner.fail(rows_loaded=0, error=str(exc))
             raise
 
 

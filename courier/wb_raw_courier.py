@@ -2,14 +2,13 @@ import argparse
 import sys
 import time
 import uuid
-from datetime import date
 
 import psycopg
-import requests
 
 from courier.common import db_connection, get_token, get_week_start, parse_iso_date
-from courier.raw_io import create_raw_load_run, insert_raw_payload, update_raw_load_run
-from courier.raw_period_replace import replace_raw_period_data
+from courier.raw_io import insert_raw_payload
+from courier.raw_load_runner import RawLoadRunner
+from courier.wb_api_client import WbApiClient
 
 
 ENDPOINT = "https://statistics-api.wildberries.ru/api/v5/supplier/reportDetailByPeriod"
@@ -42,29 +41,6 @@ def extract_next_rrdid(items: list[dict], current_rrdid: int) -> int:
     raise RuntimeError("Missing rrd_id/rrdid/rrdId in last response item")
 
 
-def fetch_page(
-    token: str,
-    date_from: date,
-    date_to: date,
-    mode: str,
-    limit: int,
-    rrdid: int,
-) -> requests.Response:
-    params = {
-        "dateFrom": f"{date_from.isoformat()}T00:00:00",
-        "dateTo": f"{date_to.isoformat()}T23:59:59",
-        "limit": limit,
-        "rrdid": rrdid,
-        "period": mode,
-    }
-    return requests.get(
-        ENDPOINT,
-        headers={"Authorization": token},
-        params=params,
-        timeout=60,
-    )
-
-
 def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
@@ -81,103 +57,37 @@ def run() -> int:
     rrdid = 0
 
     with db_connection() as conn:
+        runner = RawLoadRunner(conn=conn, load_id=load_id, account_id=account_id, source=SOURCE, period_from=date_from, period_to=date_to, period_mode=args.mode, week_start=week_start)
         try:
             token = get_token(conn, account_id)
-            replace_raw_period_data(
-                conn,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode=args.mode,
-                week_start=week_start,
-            )
-            create_raw_load_run(
-                conn,
-                load_id=load_id,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode=args.mode,
-                week_start=week_start,
-            )
-            conn.commit()
-
+            client = WbApiClient(token=token, timeout=60, max_retries=3, backoff_seconds=2.0)
+            runner.start()
             while True:
-                request_params = {
-                    "dateFrom": f"{date_from.isoformat()}T00:00:00",
-                    "dateTo": f"{date_to.isoformat()}T23:59:59",
-                    "limit": args.limit,
-                    "rrdid": rrdid,
-                    "period": args.mode,
-                }
-                response = fetch_page(token, date_from, date_to, args.mode, args.limit, rrdid)
-
+                request_params = {"dateFrom": f"{date_from.isoformat()}T00:00:00", "dateTo": f"{date_to.isoformat()}T23:59:59", "limit": args.limit, "rrdid": rrdid, "period": args.mode}
+                response = client.get(ENDPOINT, params=request_params, expected_statuses={200, 204})
                 http_status = response.status_code
-                page_rows = 0
-
                 if http_status == 204:
-                    print(
-                        f"mode={args.mode} rrdid={rrdid} http_status={http_status} "
-                        f"page_rows={page_rows} total_rows={total_rows}"
-                    )
+                    print(f"mode={args.mode} rrdid={rrdid} http_status={http_status} page_rows=0 total_rows={total_rows}")
                     break
-
-                if http_status != 200:
-                    error_text = (response.text or "").strip() or f"HTTP {http_status}"
-                    update_raw_load_run(
-                        conn, load_id=load_id, status="failed", rows_loaded=total_rows, error=error_text
-                    )
-                    conn.commit()
-                    print(
-                        f"mode={args.mode} rrdid={rrdid} http_status={http_status} "
-                        f"page_rows={page_rows} total_rows={total_rows}"
-                    )
-                    return 1
-
                 payload = response.json()
                 if not isinstance(payload, list):
                     raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
-
                 page_rows = len(payload)
-                insert_raw_payload(
-                    conn,
-                    load_id=load_id,
-                    account_id=account_id,
-                    source=SOURCE,
-                    request_params=request_params,
-                    payload=payload,
-                    period_mode=args.mode,
-                    week_start=week_start,
-                )
+                insert_raw_payload(conn, load_id=load_id, account_id=account_id, source=SOURCE, request_params=request_params, payload=payload, period_mode=args.mode, week_start=week_start)
                 total_rows += page_rows
                 conn.commit()
-
-                print(
-                    f"mode={args.mode} rrdid={rrdid} http_status={http_status} "
-                    f"page_rows={page_rows} total_rows={total_rows}"
-                )
-
+                print(f"mode={args.mode} rrdid={rrdid} http_status={http_status} page_rows={page_rows} total_rows={total_rows}")
                 if not payload:
                     break
-
                 next_rrdid = extract_next_rrdid(payload, rrdid)
                 if next_rrdid == rrdid:
                     raise RuntimeError(f"Pagination stalled: next_rrdid={next_rrdid}")
                 rrdid = next_rrdid
                 time.sleep(61)
-
-            update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=total_rows, error=None)
-            conn.commit()
+            runner.succeed(total_rows)
             return 0
         except Exception as exc:
-            conn.rollback()
-            try:
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=total_rows, error=str(exc))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            runner.fail(rows_loaded=total_rows, error=str(exc))
             raise
 
 

@@ -5,11 +5,11 @@ import uuid
 from datetime import date, timedelta
 
 import psycopg
-import requests
 
 from courier.common import db_connection, get_token, parse_iso_date
-from courier.raw_io import create_raw_load_run, insert_raw_payload, update_raw_load_run
-from courier.raw_period_replace import replace_raw_period_data
+from courier.raw_io import insert_raw_payload
+from courier.raw_load_runner import RawLoadRunner
+from courier.wb_api_client import WbApiClient
 
 
 ENDPOINT = "https://seller-analytics-api.wildberries.ru/api/analytics/v3/sales-funnel/products"
@@ -37,24 +37,10 @@ def default_past_period(date_from: date, date_to: date) -> tuple[date, date]:
     return past_start, past_end
 
 
-def build_request_body(
-    date_from: date,
-    date_to: date,
-    past_date_from: date,
-    past_date_to: date,
-    limit: int,
-    offset: int,
-    skip_deleted_nm: bool,
-) -> dict:
+def build_request_body(date_from: date, date_to: date, past_date_from: date, past_date_to: date, limit: int, offset: int, skip_deleted_nm: bool) -> dict:
     return {
-        "selectedPeriod": {
-            "start": date_from.isoformat(),
-            "end": date_to.isoformat(),
-        },
-        "pastPeriod": {
-            "start": past_date_from.isoformat(),
-            "end": past_date_to.isoformat(),
-        },
+        "selectedPeriod": {"start": date_from.isoformat(), "end": date_to.isoformat()},
+        "pastPeriod": {"start": past_date_from.isoformat(), "end": past_date_to.isoformat()},
         "nmIds": [],
         "brandNames": [],
         "subjectIds": [],
@@ -88,103 +74,34 @@ def run() -> int:
     offset = 0
 
     with db_connection() as conn:
+        runner = RawLoadRunner(conn=conn, load_id=load_id, account_id=account_id, source=SOURCE, period_from=date_from, period_to=date_to, period_mode="range", week_start=date_from)
         try:
             token = get_token(conn, account_id)
-            replace_raw_period_data(
-                conn,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode="range",
-                week_start=date_from,
-            )
-            create_raw_load_run(
-                conn,
-                load_id=load_id,
-                account_id=account_id,
-                source=SOURCE,
-                period_from=date_from,
-                period_to=date_to,
-                period_mode="range",
-                week_start=date_from,
-            )
-            conn.commit()
-
+            client = WbApiClient(token=token, timeout=60, max_retries=3, backoff_seconds=2.0)
+            runner.start()
             while True:
-                request_body = build_request_body(
-                    date_from=date_from,
-                    date_to=date_to,
-                    past_date_from=past_date_from,
-                    past_date_to=past_date_to,
-                    limit=args.limit,
-                    offset=offset,
-                    skip_deleted_nm=args.skip_deleted_nm,
-                )
-                response = requests.post(
-                    ENDPOINT,
-                    headers={
-                        "Authorization": token,
-                        "Content-Type": "application/json",
-                    },
-                    json=request_body,
-                    timeout=60,
-                )
-
-                if response.status_code != 200:
-                    error_text = (response.text or "").strip() or f"HTTP {response.status_code}"
-                    update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=total_rows, error=error_text)
-                    conn.commit()
-                    print(
-                        f"source={SOURCE} http_status={response.status_code} "
-                        f"page_rows=0 total_rows={total_rows} offset={offset}"
-                    )
-                    return 1
-
+                request_body = build_request_body(date_from, date_to, past_date_from, past_date_to, args.limit, offset, args.skip_deleted_nm)
+                response = client.post(ENDPOINT, json=request_body, headers={"Content-Type": "application/json"}, expected_statuses={200})
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise RuntimeError(f"Expected object payload, got {type(payload).__name__}")
-
                 data = payload.get("data") or {}
                 products = data.get("products")
                 if not isinstance(products, list):
                     raise RuntimeError("Expected payload.data.products to be a list")
-
                 page_rows = len(products)
-                insert_raw_payload(
-                    conn,
-                    load_id=load_id,
-                    account_id=account_id,
-                    source=SOURCE,
-                    request_params=request_body,
-                    payload=payload,
-                    period_mode="range",
-                    week_start=date_from,
-                )
+                insert_raw_payload(conn, load_id=load_id, account_id=account_id, source=SOURCE, request_params=request_body, payload=payload, period_mode="range", week_start=date_from)
                 total_rows += page_rows
                 conn.commit()
-
-                print(
-                    f"source={SOURCE} http_status=200 page_rows={page_rows} "
-                    f"total_rows={total_rows} offset={offset}"
-                )
-
+                print(f"source={SOURCE} http_status=200 page_rows={page_rows} total_rows={total_rows} offset={offset}")
                 if page_rows < args.limit:
                     break
-
                 offset += args.limit
                 time.sleep(20)
-
-            update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=total_rows, error=None)
-            conn.commit()
+            runner.succeed(total_rows)
             return 0
         except Exception as exc:
-            conn.rollback()
-            try:
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=total_rows, error=str(exc))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            runner.fail(rows_loaded=total_rows, error=str(exc))
             raise
 
 

@@ -5,10 +5,11 @@ import uuid
 from datetime import datetime
 
 import psycopg
-import requests
 
 from courier.common import db_connection, get_token
-from courier.raw_io import create_raw_load_run, insert_raw_payload, update_raw_load_run
+from courier.raw_io import insert_raw_payload
+from courier.raw_load_runner import RawLoadRunner, snapshot_date
+from courier.wb_api_client import WbApiClient
 
 
 ENDPOINT = "https://content-api.wildberries.ru/content/v2/get/cards/list"
@@ -24,32 +25,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def create_load_run(conn: psycopg.Connection, load_id: uuid.UUID, account_id: uuid.UUID) -> None:
-    snapshot_date = datetime.now().date()
-    create_raw_load_run(
-        conn,
-        load_id=load_id,
-        account_id=account_id,
-        source=SOURCE,
-        period_from=snapshot_date,
-        period_to=snapshot_date,
-        period_mode="snapshot",
-        week_start=snapshot_date,
-    )
-
-
-def fetch_page(token: str, request_body: dict) -> requests.Response:
-    return requests.post(
-        ENDPOINT,
-        headers={
-            "Authorization": token,
-            "Content-Type": "application/json",
-        },
-        json=request_body,
-        timeout=60,
-    )
-
-
 def run() -> int:
     args = parse_args()
     if args.limit <= 0 or args.limit > 100:
@@ -60,12 +35,23 @@ def run() -> int:
     total_cards = 0
     cursor_updated_at = None
     cursor_nm_id = None
+    today = snapshot_date()
 
     with db_connection() as conn:
+        runner = RawLoadRunner(
+            conn=conn,
+            load_id=load_id,
+            account_id=account_id,
+            source=SOURCE,
+            period_from=today,
+            period_to=today,
+            period_mode="snapshot",
+            week_start=today,
+        )
         try:
             token = get_token(conn, account_id)
-            create_load_run(conn, load_id, account_id)
-            conn.commit()
+            client = WbApiClient(token=token, timeout=60, max_retries=3, backoff_seconds=2.0)
+            runner.start()
 
             while True:
                 request_body = {
@@ -80,19 +66,12 @@ def run() -> int:
                 if cursor_nm_id is not None:
                     request_body["settings"]["cursor"]["nmID"] = cursor_nm_id
 
-                response = fetch_page(token, request_body)
-                http_status = response.status_code
-                page_cards = 0
-
-                if http_status != 200:
-                    error_text = (response.text or "").strip() or f"HTTP {http_status}"
-                    update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=total_cards, error=error_text)
-                    conn.commit()
-                    print(
-                        f"source={SOURCE} http_status={http_status} page_cards=0 total_cards={total_cards}"
-                    )
-                    return 1
-
+                response = client.post(
+                    ENDPOINT,
+                    json=request_body,
+                    headers={"Content-Type": "application/json"},
+                    expected_statuses={200},
+                )
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise RuntimeError(f"Expected object payload, got {type(payload).__name__}")
@@ -121,7 +100,7 @@ def run() -> int:
                 next_total = next_cursor.get("total")
 
                 print(
-                    f"source={SOURCE} http_status={http_status} page_cards={page_cards} "
+                    f"source={SOURCE} http_status=200 page_cards={page_cards} "
                     f"total_cards={total_cards} cursor_total={next_total} "
                     f"cursor_updated_at={next_updated_at} cursor_nm_id={next_nm_id}"
                 )
@@ -139,16 +118,10 @@ def run() -> int:
                 cursor_nm_id = next_nm_id
                 time.sleep(1)
 
-            update_raw_load_run(conn, load_id=load_id, status="success", rows_loaded=total_cards, error=None)
-            conn.commit()
+            runner.succeed(total_cards)
             return 0
         except Exception as exc:
-            conn.rollback()
-            try:
-                update_raw_load_run(conn, load_id=load_id, status="failed", rows_loaded=total_cards, error=str(exc))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            runner.fail(rows_loaded=total_cards, error=str(exc))
             raise
 
 
