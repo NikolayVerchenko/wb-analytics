@@ -41,6 +41,7 @@ export function useEconomicsDashboard() {
     dateFrom: string
     dateTo: string
     filters: EconomicsFiltersValue
+    comparePrevious?: boolean
   }) {
     if (!params.accountId) {
       dashboard.value = null
@@ -58,7 +59,7 @@ export function useEconomicsDashboard() {
         subjects: params.filters.subjects,
         brands: params.filters.brands,
         articles: params.filters.articles,
-        compare_previous: true,
+        compare_previous: params.comparePrevious ?? true,
       })
     } catch (err) {
       dashboard.value = null

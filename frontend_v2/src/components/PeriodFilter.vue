@@ -1,11 +1,11 @@
 <template>
   <div class="period-filter">
-    <button type="button" class="period-trigger" @click="toggleOpen">
+    <button ref="triggerRef" type="button" class="period-trigger" @click="toggleOpen">
       <span>{{ periodLabel }}</span>
       <span class="period-trigger-icon">▦</span>
     </button>
 
-    <div v-if="isOpen" class="period-popover">
+    <div v-if="isOpen" ref="popoverRef" class="period-popover" :style="popoverStyle">
       <div class="period-calendar-layout">
         <div class="period-calendars">
           <div class="period-months-nav">
@@ -80,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 type PeriodPreset = 'week' | 'two_weeks' | 'month' | 'quarter' | 'year'
 
@@ -125,6 +125,9 @@ const emit = defineEmits<{
 const isOpen = ref(false)
 const hoveredDate = ref('')
 const displayedMonth = ref(getMonthStart(parseDateValue(props.dateFrom) ?? new Date()))
+const triggerRef = ref<HTMLElement | null>(null)
+const popoverRef = ref<HTMLElement | null>(null)
+const popoverStyle = ref<Record<string, string>>({})
 
 const draft = reactive<PeriodRange>({
   date_from: props.dateFrom,
@@ -159,6 +162,52 @@ watch(
     hoveredDate.value = ''
   },
 )
+
+watch(isOpen, async (open) => {
+  if (open) {
+    await nextTick()
+    updatePopoverPosition()
+    window.addEventListener('resize', updatePopoverPosition)
+    window.addEventListener('scroll', updatePopoverPosition, true)
+    return
+  }
+
+  removePopoverListeners()
+})
+
+onBeforeUnmount(() => {
+  removePopoverListeners()
+})
+
+function removePopoverListeners() {
+  window.removeEventListener('resize', updatePopoverPosition)
+  window.removeEventListener('scroll', updatePopoverPosition, true)
+}
+
+function updatePopoverPosition() {
+  const trigger = triggerRef.value
+  if (!trigger) {
+    return
+  }
+
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const margin = 16
+  const desiredWidth = 620
+  const width = Math.min(desiredWidth, Math.max(320, viewportWidth - margin * 2))
+  const rect = trigger.getBoundingClientRect()
+  const left = Math.min(Math.max(margin, rect.right - width), viewportWidth - width - margin)
+  const top = Math.min(rect.bottom + 8, viewportHeight - margin)
+  const maxHeight = Math.max(240, viewportHeight - top - margin)
+
+  popoverStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    maxWidth: `calc(100vw - ${margin * 2}px)`,
+    maxHeight: `${maxHeight}px`,
+  }
+}
 
 function toggleOpen() {
   isOpen.value = !isOpen.value
@@ -361,102 +410,102 @@ function formatDisplayDate(value: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-width: 260px;
-  padding: 10px 14px;
-  border: 1px solid #7c3aed;
-  border-radius: 8px;
+  gap: 8px;
+  min-width: 220px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
   background: #ffffff;
   color: #111827;
+  font-size: 13px;
 }
 
 .period-trigger-icon {
-  color: #7c3aed;
-  font-size: 18px;
+  color: #9ca3af;
+  font-size: 14px;
 }
 
 .period-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 30;
-  width: 760px;
-  max-width: calc(100vw - 64px);
-  padding: 16px;
+  position: fixed;
+  z-index: 40;
+  padding: 12px;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+  overflow: auto;
 }
 
 .period-calendar-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) 200px;
 }
 
 .period-calendars {
-  padding-right: 16px;
+  padding-right: 12px;
   border-right: 1px solid #e5e7eb;
 }
 
 .period-months-nav {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  grid-template-columns: 32px 1fr 32px;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .period-nav-button {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   background: #ffffff;
+  font-size: 12px;
 }
 
 .period-nav-year {
   text-align: center;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 600;
 }
 
 .period-months-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .period-month-card {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .period-month-title {
   margin: 0;
   text-align: center;
-  font-size: 24px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .period-weekdays,
 .period-days-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: 3px;
 }
 
 .period-weekdays span {
   text-align: center;
-  font-size: 14px;
+  font-size: 12px;
   color: #4b5563;
 }
 
 .period-day {
-  height: 36px;
+  height: 30px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #ffffff;
+  font-size: 12px;
 }
 
 .period-day-outside {
@@ -476,20 +525,21 @@ function formatDisplayDate(value: string): string {
 }
 
 .period-sidebar {
-  padding-left: 16px;
+  padding-left: 12px;
 }
 
 .period-presets {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .period-preset-button,
 .period-secondary-button,
 .period-primary-button {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
 }
 
 .period-preset-button,
@@ -500,8 +550,8 @@ function formatDisplayDate(value: string): string {
 
 .period-fields {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .period-field {
@@ -510,33 +560,31 @@ function formatDisplayDate(value: string): string {
 }
 
 .period-field label {
-  font-size: 14px;
+  font-size: 12px;
   color: #4b5563;
 }
 
 .period-field input {
-  padding: 10px 12px;
+  padding: 7px 10px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
+  font-size: 12px;
 }
 
 .period-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .period-primary-button {
-  border: 0;
-  background: #f97316;
-  color: #ffffff;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #111827;
 }
 
 @media (max-width: 960px) {
-  .period-popover {
-    width: min(760px, calc(100vw - 32px));
-  }
-
   .period-calendar-layout {
     grid-template-columns: 1fr;
     gap: 16px;
@@ -557,12 +605,6 @@ function formatDisplayDate(value: string): string {
 @media (max-width: 720px) {
   .period-trigger {
     min-width: 100%;
-  }
-
-  .period-popover {
-    left: auto;
-    right: 0;
-    width: calc(100vw - 32px);
   }
 
   .period-months-grid {

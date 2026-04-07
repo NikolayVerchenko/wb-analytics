@@ -1,0 +1,619 @@
+<template>
+  <section class="stack">
+    <div class="card stack">
+      <div>
+        <h2 class="page-title">Загрузка данных</h2>
+        <p class="page-description">
+          Экран запускает четыре отдельных контура: weekly backfill продаж, обновление незакрытой недели,
+          отдельную загрузку воронки продаж и snapshot-обновление остатков. Для history sales и funnel можно
+          либо начать период с нуля, либо продолжить только те закрытые недели и дни, которые ещё не были успешно загружены.
+        </p>
+      </div>
+
+      <div class="sync-form-grid">
+        <div class="field">
+          <label for="sync-account">Кабинет</label>
+          <select id="sync-account" v-model="form.accountId" class="field-select">
+            <option value="">Выберите кабинет</option>
+            <option v-for="account in accounts" :key="account.account_id" :value="account.account_id">
+              {{ getAccountTitle(account) }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sync-date-from">Дата от</label>
+          <input id="sync-date-from" v-model="form.dateFrom" type="date" />
+        </div>
+
+        <div class="field">
+          <label for="sync-date-to">Дата до</label>
+          <input id="sync-date-to" v-model="form.dateTo" type="date" />
+        </div>
+      </div>
+
+      <div class="sync-form-actions">
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="createLoading || !canSubmit"
+          @click="handleCreateJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Загрузить недельные данные' }}
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="createLoading || !canSubmit"
+          @click="handleContinueSalesJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Продолжить недельные данные' }}
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="createLoading || !form.accountId"
+          @click="handleCreateOpenWeekJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Обновить незакрытую неделю' }}
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="createLoading || !canSubmit"
+          @click="handleCreateFunnelJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Загрузить воронку продаж' }}
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="createLoading || !canSubmit"
+          @click="handleContinueFunnelJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Продолжить воронку продаж' }}
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="createLoading || !form.accountId"
+          @click="handleCreateStockSnapshotJob"
+        >
+          {{ createLoading ? 'Создание job...' : 'Обновить остатки сейчас' }}
+        </button>
+
+        <button
+          v-if="jobId"
+          type="button"
+          class="secondary-button"
+          :disabled="detailsLoading"
+          @click="loadCurrentJob(jobId)"
+        >
+          Обновить статус
+        </button>
+
+        <button
+          v-if="jobId && canCancelJob"
+          type="button"
+          class="secondary-button"
+          :disabled="cancelLoading"
+          @click="handleCancelJob(jobId)"
+        >
+          {{ cancelLoading ? 'Останавливаю...' : 'Остановить' }}
+        </button>
+
+        <button
+          v-if="jobId && canRestartJob"
+          type="button"
+          class="secondary-button"
+          :disabled="restartLoading"
+          @click="handleRestartJob(jobId)"
+        >
+          {{ restartLoading ? 'Продолжаю...' : 'Продолжить' }}
+        </button>
+
+        <button
+          v-if="jobId && hasFailedSteps"
+          type="button"
+          class="secondary-button"
+          :disabled="retryFailedLoading"
+          @click="handleRetryFailed(jobId)"
+        >
+          {{ retryFailedLoading ? 'Перезапуск ошибок...' : 'Повторить ошибки' }}
+        </button>
+      </div>
+
+      <div v-if="createError" class="message message-error">{{ createError }}</div>
+      <div v-else-if="createSuccessMessage" class="message message-info">{{ createSuccessMessage }}</div>
+      <div v-if="retryFailedError" class="message message-error">{{ retryFailedError }}</div>
+      <div v-if="cancelError" class="message message-error">{{ cancelError }}</div>
+      <div v-if="restartError" class="message message-error">{{ restartError }}</div>
+    </div>
+
+    <div v-if="detailsLoading" class="message message-info">Обновляю статус job...</div>
+    <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
+
+    <SyncJobProgress
+      v-if="jobDetails"
+      :job-details="jobDetails"
+      :current-account-title="currentAccountTitle"
+    />
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getAccounts } from '../api/accounts'
+import SyncJobProgress from '../components/SyncJobProgress.vue'
+import { useSyncJob } from '../composables/useSyncJob'
+import type { Account } from '../types/account'
+
+const route = useRoute()
+const router = useRouter()
+const accounts = ref<Account[]>([])
+const SYNC_PAGE_STATE_KEY = 'sync-page-state'
+
+const {
+  jobDetails,
+  createLoading,
+  createError,
+  createSuccessMessage,
+  conflictJobId,
+  detailsLoading,
+  detailsError,
+  retryFailedLoading,
+  retryFailedError,
+  cancelLoading,
+  cancelError,
+  restartLoading,
+  restartError,
+  createJob,
+  continueJob,
+  loadJobDetails,
+  retryFailedJob,
+  cancelJob,
+  restartJob,
+  startPolling,
+  stopPolling,
+} = useSyncJob()
+
+const form = reactive({
+  accountId: '',
+  dateFrom: getDefaultDateFrom(),
+  dateTo: getDefaultDateTo(),
+})
+
+const jobId = computed(() => (typeof route.query.job_id === 'string' ? route.query.job_id : ''))
+const hasFailedSteps = computed(() => jobDetails.value?.steps.some((step) => step.status === 'failed') ?? false)
+const canCancelJob = computed(() => {
+  const status = jobDetails.value?.job.status
+  return status === 'pending' || status === 'running'
+})
+const canRestartJob = computed(() => {
+  const status = jobDetails.value?.job.status
+  return status === 'cancelled' || status === 'failed' || status === 'partial_success'
+})
+const currentAccountTitle = computed(() => {
+  const account = accounts.value.find((item) => item.account_id === form.accountId)
+  return account ? getAccountTitle(account) : 'Не выбран'
+})
+const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
+
+function formatDate(value: Date): string {
+  return value.toISOString().slice(0, 10)
+}
+
+function getDefaultDateTo(): string {
+  const today = new Date()
+  const previousSunday = new Date(today)
+  const day = previousSunday.getDay()
+  const diffToPreviousSunday = day === 0 ? 7 : day
+  previousSunday.setDate(previousSunday.getDate() - diffToPreviousSunday)
+  return formatDate(previousSunday)
+}
+
+function getDefaultDateFrom(): string {
+  const dateTo = new Date(getDefaultDateTo())
+  const start = new Date(dateTo)
+  start.setDate(start.getDate() - 7 * 51)
+  return formatDate(start)
+}
+
+function getTodayDate(): string {
+  return formatDate(new Date())
+}
+
+function getAccountTitle(account: Account): string {
+  return account.seller_name || account.name || 'Без названия'
+}
+
+
+function saveSyncPageState() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const currentJob = jobDetails.value?.job
+  if (!currentJob) {
+    return
+  }
+
+  window.localStorage.setItem(
+    SYNC_PAGE_STATE_KEY,
+    JSON.stringify({
+      account_id: currentJob.account_id,
+      job_id: currentJob.job_id,
+      date_from: currentJob.date_from,
+      date_to: currentJob.date_to,
+    }),
+  )
+}
+
+async function restoreSyncPageState() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  if (typeof route.query.job_id === 'string' && route.query.job_id) {
+    return false
+  }
+
+  const raw = window.localStorage.getItem(SYNC_PAGE_STATE_KEY)
+  if (!raw) {
+    return false
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      account_id?: string
+      job_id?: string
+      date_from?: string
+      date_to?: string
+    }
+
+    if (!parsed.job_id) {
+      return false
+    }
+
+    if (parsed.account_id) {
+      form.accountId = parsed.account_id
+    }
+    if (parsed.date_from) {
+      form.dateFrom = parsed.date_from
+    }
+    if (parsed.date_to) {
+      form.dateTo = parsed.date_to
+    }
+
+    await router.replace({
+      path: '/sync',
+      query: {
+        account_id: parsed.account_id || form.accountId,
+        job_id: parsed.job_id,
+      },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+
+async function loadAccountsList() {
+  try {
+    accounts.value = await getAccounts()
+
+    const routeAccountId = typeof route.query.account_id === 'string' ? route.query.account_id : ''
+    if (routeAccountId) {
+      form.accountId = routeAccountId
+    }
+  } catch {
+    accounts.value = []
+  }
+}
+
+async function loadCurrentJob(targetJobId: string) {
+  const response = await loadJobDetails(targetJobId)
+
+  if (response?.job.account_id) {
+    form.accountId = response.job.account_id
+    form.dateFrom = response.job.date_from
+    form.dateTo = response.job.date_to
+  }
+}
+
+async function handleCreateJob() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  const response = await createJob({
+    account_id: form.accountId,
+    job_type: 'initial_sales_backfill',
+    mode: 'weekly',
+    date_from: form.dateFrom,
+    date_to: form.dateTo,
+    datasets: ['sales'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleContinueSalesJob() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  const response = await continueJob({
+    account_id: form.accountId,
+    job_type: 'initial_sales_backfill',
+    mode: 'weekly',
+    date_from: form.dateFrom,
+    date_to: form.dateTo,
+    datasets: ['sales'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleCreateOpenWeekJob() {
+  if (!form.accountId) {
+    return
+  }
+
+  const today = getTodayDate()
+  const response = await createJob({
+    account_id: form.accountId,
+    job_type: 'open_week_refresh',
+    mode: 'daily',
+    date_from: today,
+    date_to: today,
+    datasets: ['sales'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleCreateFunnelJob() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  const response = await createJob({
+    account_id: form.accountId,
+    job_type: 'sales_funnel_backfill',
+    mode: 'weekly',
+    date_from: form.dateFrom,
+    date_to: form.dateTo,
+    datasets: ['sales_funnel'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleContinueFunnelJob() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  const response = await continueJob({
+    account_id: form.accountId,
+    job_type: 'sales_funnel_backfill',
+    mode: 'weekly',
+    date_from: form.dateFrom,
+    date_to: form.dateTo,
+    datasets: ['sales_funnel'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleCreateStockSnapshotJob() {
+  if (!form.accountId) {
+    return
+  }
+
+  const snapshotDate = getTodayDate()
+  const response = await createJob({
+    account_id: form.accountId,
+    job_type: 'stock_snapshot_refresh',
+    mode: 'daily',
+    date_from: snapshotDate,
+    date_to: snapshotDate,
+    datasets: ['warehouse_remains'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleRetryFailed(targetJobId: string) {
+  const response = await retryFailedJob(targetJobId)
+  if (!response) {
+    return
+  }
+
+  await loadCurrentJob(targetJobId)
+  startPolling(targetJobId)
+}
+
+async function handleCancelJob(targetJobId: string) {
+  const response = await cancelJob(targetJobId)
+  if (!response) {
+    return
+  }
+
+  await loadCurrentJob(targetJobId)
+}
+
+async function handleRestartJob(targetJobId: string) {
+  const response = await restartJob(targetJobId)
+  if (!response) {
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+watch(
+  () => route.query.account_id,
+  (value) => {
+    if (typeof value === 'string') {
+      form.accountId = value
+    }
+  },
+)
+
+watch(
+  () => route.query.job_id,
+  async (value) => {
+    if (typeof value === 'string' && value) {
+      await loadCurrentJob(value)
+      startPolling(value)
+      return
+    }
+
+    stopPolling()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => jobDetails.value?.job,
+  (job) => {
+    if (job) {
+      saveSyncPageState()
+    }
+  },
+  { deep: true },
+)
+
+onMounted(async () => {
+  await loadAccountsList()
+  await restoreSyncPageState()
+})
+</script>

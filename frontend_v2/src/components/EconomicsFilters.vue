@@ -278,39 +278,41 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
 .filters-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
+  font-size: 13px;
 }
 
 .filters-trigger-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .filters-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: #e0e7ff;
   color: #4338ca;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .filters-popover {
   position: absolute;
   top: calc(100% + 12px);
-  left: 0;
+  right: 0;
+  left: auto;
   z-index: 30;
-  width: 520px;
-  max-width: calc(100vw - 32px);
+  width: 360px;
+  max-width: calc(100vw - 24px);
   border: 1px solid #e5e7eb;
   border-radius: 14px;
   background: #ffffff;
@@ -319,14 +321,14 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
 
 .filters-layout {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  min-height: 360px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  min-height: 300px;
 }
 
 .filters-sections {
   display: grid;
   align-content: start;
-  padding: 12px;
+  padding: 10px;
   border-right: 1px solid #e5e7eb;
   background: #fafafa;
 }
@@ -335,14 +337,15 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 12px 10px;
+  padding: 8px 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
   color: #374151;
+  font-size: 13px;
 }
 
 .filters-section-button-active {
@@ -352,13 +355,13 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
 }
 
 .filters-section-count {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: #ede9fe;
   color: #7c3aed;
-  font-size: 11px;
+  font-size: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -368,35 +371,37 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 0;
-  padding: 12px;
+  padding: 10px;
 }
 
 .filters-search-row {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .filters-search-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 7px 10px;
   border: 1px solid #d1d5db;
-  border-radius: 10px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .filters-options-list {
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: 6px;
-  max-height: 300px;
+  gap: 4px;
+  max-height: 240px;
   padding-right: 4px;
 }
 
 .filters-option-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 8px 6px;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 .filters-option-item:hover {
@@ -413,13 +418,14 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
 }
 
 .filters-option-hint {
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
 }
 
 .filters-message {
-  padding: 12px;
-  border-radius: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .filters-message-info {
@@ -439,26 +445,27 @@ function cloneFilters(value: EconomicsFiltersValue): EconomicsFiltersValue {
 
 .filters-actions {
   display: flex;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   border-top: 1px solid #e5e7eb;
 }
 
 .filters-primary-button,
 .filters-secondary-button {
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .filters-primary-button {
-  border: 0;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #ffffff;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
 }
 
 .filters-secondary-button {
   border: 1px solid #e5e7eb;
-  background: #f3f4f6;
+  background: #f9fafb;
   color: #374151;
 }
 

@@ -15,13 +15,17 @@ def main() -> None:
         Path("db/marts/facts/fact_unit_economics_day_size_closed.sql"),
         Path("db/marts/facts/fact_unit_economics_day_size_current.sql"),
         Path("db/marts/facts/fact_unit_economics_weekly_size_closed.sql"),
-        Path("db/marts/final/supply_items.sql"),
-        Path("db/marts/final/sku_unit_economics.sql"),
-        Path("db/marts/final/sku_unit_economics_weekly.sql"),
-        Path("db/marts/final/sku_unit_economics_day_closed.sql"),
-        Path("db/marts/final/sku_unit_economics_day_item_closed.sql"),
-        Path("db/marts/final/sku_unit_economics_day_current.sql"),
-        Path("db/marts/final/sku_unit_economics_day_item_current.sql"),
+        Path("db/marts/supplies/supply_items.sql"),
+        Path("db/marts/calculation/sku_unit_economics_weekly.sql"),
+        Path("db/marts/calculation/sku_unit_economics_day_closed.sql"),
+        Path("db/marts/calculation/sku_unit_economics_day_item_closed.sql"),
+        Path("db/marts/calculation/sku_unit_economics_day_current.sql"),
+        Path("db/marts/calculation/sku_unit_economics_day_item_current.sql"),
+        Path("db/marts/serving/drop_legacy_ui_views.sql"),
+        Path("db/marts/serving/ui_item_size_day.sql"),
+        Path("db/marts/serving/ui_item_day.sql"),
+        Path("db/marts/serving/ui_stock_item_snapshot.sql"),
+        Path("db/marts/serving/ui_stock_warehouse_snapshot.sql"),
     ]
 
     with db_connection() as conn:
@@ -33,3 +37,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

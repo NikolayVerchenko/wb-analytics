@@ -9,6 +9,7 @@ create table if not exists core.sync_job_steps (
     status text not null,
     attempt integer not null default 1 check (attempt >= 1),
     error_message text,
+    next_retry_at timestamptz,
     started_at timestamptz,
     finished_at timestamptz,
     created_at timestamptz not null default now(),

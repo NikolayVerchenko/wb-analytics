@@ -1,6 +1,6 @@
 create schema if not exists mart;
 
-create or replace view mart.sku_unit_economics_day_item_current as
+create or replace view mart.sku_unit_economics_day_item_closed as
 with acceptance_base as (
     select
         ac.account_id,
@@ -14,19 +14,36 @@ with acceptance_base as (
         ac.account_id,
         ac.gi_create_date,
         ac.nm_id
+),
+base_keys as (
+    select
+        s.account_id,
+        s.calendar_date,
+        s.week_start,
+        s.nm_id,
+        s.vendor_code
+    from mart.fact_unit_economics_day_size_closed s
+    union
+    select
+        ab.account_id,
+        ab.calendar_date,
+        date_trunc('week', ab.calendar_date::timestamp)::date as week_start,
+        ab.nm_id,
+        ab.vendor_code_norm as vendor_code
+    from mart.fact_advert_day_item ab
 )
 select
-    s.account_id,
-    s.calendar_date,
-    s.week_start,
-    s.nm_id,
-    s.vendor_code,
-    max(s.brand_name) as brand_name,
-    max(s.subject_name) as subject_name,
+    bk.account_id,
+    bk.calendar_date,
+    bk.week_start,
+    bk.nm_id,
+    bk.vendor_code,
+    max(coalesce(s.brand_name, pc.brand)) as brand_name,
+    max(coalesce(s.subject_name, pc.subject_name)) as subject_name,
     max(s.bonus_type_name) as bonus_type_name,
     acc.name as account_name,
     pp.photo_url,
-    sum(coalesce(s.sales_quantity, 0))::bigint as sales_quantity,
+    (sum(coalesce(s.sales_quantity, 0)) - sum(coalesce(s.return_quantity, 0)))::bigint as sales_quantity,
     sum(coalesce(s.return_quantity, 0))::bigint as return_quantity,
     sum(coalesce(s.retail_price_sale, 0))::numeric as retail_price_sale,
     sum(coalesce(s.retail_price_return, 0))::numeric as retail_price_return,
@@ -57,7 +74,7 @@ select
     end::numeric as wb_commission_percent,
     case
         when sum(coalesce(s.delivery_quantity, 0)) = 0 then null
-        else round((sum(coalesce(s.sales_quantity, 0)) / sum(coalesce(s.delivery_quantity, 0))) * 100, 2)
+        else round((((sum(coalesce(s.sales_quantity, 0)) - sum(coalesce(s.return_quantity, 0))) / sum(coalesce(s.delivery_quantity, 0))) * 100), 2)
     end::numeric as buyout_percent,
     sum(coalesce(s.tax_amount, 0))::numeric as tax_amount,
     sum(coalesce(s.cogs_amount, 0))::numeric as cogs_amount,
@@ -97,28 +114,37 @@ select
             - sum(coalesce(s.cogs_amount, 0))
         ) / sum(coalesce(s.cogs_amount, 0))) * 100, 2)
     end::numeric as roi_percent
-from mart.fact_unit_economics_day_size_current s
+from base_keys bk
+left join mart.fact_unit_economics_day_size_closed s
+  on s.account_id = bk.account_id
+ and s.calendar_date = bk.calendar_date
+ and s.week_start = bk.week_start
+ and s.nm_id = bk.nm_id
+ and lower(btrim(s.vendor_code)) = lower(btrim(bk.vendor_code))
 left join mart.fact_advert_day_item ab
-  on ab.account_id = s.account_id
- and ab.calendar_date = s.calendar_date
- and ab.nm_id = s.nm_id
- and ab.vendor_code_norm = lower(btrim(s.vendor_code))
+  on ab.account_id = bk.account_id
+ and ab.calendar_date = bk.calendar_date
+ and ab.nm_id = bk.nm_id
+ and ab.vendor_code_norm = lower(btrim(bk.vendor_code))
 left join acceptance_base acb
-  on acb.account_id = s.account_id
- and acb.calendar_date = s.calendar_date
- and acb.nm_id = s.nm_id
+  on acb.account_id = bk.account_id
+ and acb.calendar_date = bk.calendar_date
+ and acb.nm_id = bk.nm_id
 left join core.accounts acc
-  on acc.account_id = s.account_id
+  on acc.account_id = bk.account_id
+left join core.product_cards pc
+  on pc.account_id = bk.account_id
+ and pc.nm_id = bk.nm_id
 left join core.product_card_photos pp
-  on pp.account_id = s.account_id
- and pp.nm_id = s.nm_id
+  on pp.account_id = bk.account_id
+ and pp.nm_id = bk.nm_id
  and pp.photo_index = 1
 group by
-    s.account_id,
-    s.calendar_date,
-    s.week_start,
-    s.nm_id,
-    s.vendor_code,
+    bk.account_id,
+    bk.calendar_date,
+    bk.week_start,
+    bk.nm_id,
+    bk.vendor_code,
     acc.name,
     pp.photo_url,
     ab.advert_cost,

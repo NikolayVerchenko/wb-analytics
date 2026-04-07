@@ -3,9 +3,10 @@ import { useRoute, useRouter } from 'vue-router'
 import type { EconomicsFiltersValue } from '../types/filters'
 import { buildPrefixedEconomicsQuery, parsePrefixedEconomicsQuery } from '../utils/economicsQuery'
 
-export function useEconomicsTableQueryState() {
+export function useEconomicsTableQueryState(options: { path?: string } = {}) {
   const route = useRoute()
   const router = useRouter()
+  const targetPath = options.path ?? '/economics'
 
   const selectedFilters = ref<EconomicsFiltersValue>({
     subjects: [],
@@ -34,7 +35,7 @@ export function useEconomicsTableQueryState() {
     }
 
     await router.push({
-      path: '/economics',
+      path: targetPath,
       query,
     })
   }

@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException
 import psycopg
 
+from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.modules.economics.repository import EconomicsRepository
 from backend.app.modules.economics.schemas import (
     EconomicsDashboardMetricRead,
@@ -56,9 +57,15 @@ class EconomicsService:
 
     def __init__(self, conn: psycopg.Connection) -> None:
         self._repository = EconomicsRepository(conn)
+        self._account_access = AccountAccessRepository(conn)
+
+    def _ensure_account_access(self, *, user_id: UUID, account_id: UUID) -> None:
+        if not self._account_access.user_has_account_access(user_id=user_id, account_id=account_id):
+            raise HTTPException(status_code=403, detail='Access to this account is forbidden.')
 
     def list_period_items(
         self,
+        user_id: UUID,
         account_id: UUID,
         date_from: date,
         date_to: date,
@@ -73,11 +80,17 @@ class EconomicsService:
         min_profit: Decimal | None,
         max_profit: Decimal | None,
     ) -> EconomicsPeriodItemsResponse:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
         if sort is None:
-            order_by = 'vendor_code nulls last, nm_id'
+            order_by = (
+                "case when coalesce(sales_quantity, 0) <> 0 or coalesce(realization_before_spp, 0) <> 0 \
+                or coalesce(seller_transfer, 0) <> 0 then 0 else 1 end, "
+                "realization_before_spp desc nulls last, seller_transfer desc nulls last, "
+                "vendor_code nulls last, nm_id"
+            )
         else:
             order_by = self._SORT_MAP.get(sort)
             if order_by is None:
@@ -104,12 +117,14 @@ class EconomicsService:
 
     def list_period_sizes(
         self,
+        user_id: UUID,
         account_id: UUID,
         date_from: date,
         date_to: date,
         nm_id: int,
         vendor_code: str,
     ) -> list[EconomicsPeriodSizeRead]:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
@@ -119,10 +134,12 @@ class EconomicsService:
 
     def list_filter_options(
         self,
+        user_id: UUID,
         account_id: UUID,
         date_from: date,
         date_to: date,
     ) -> EconomicsFilterOptionsResponse:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
@@ -135,6 +152,7 @@ class EconomicsService:
 
     def get_dashboard(
         self,
+        user_id: UUID,
         account_id: UUID,
         date_from: date,
         date_to: date,
@@ -143,6 +161,7 @@ class EconomicsService:
         articles: list[str] | None,
         compare_previous: bool,
     ) -> EconomicsDashboardResponse:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 

@@ -2,8 +2,10 @@ export type EconomicsItem = {
   photo_url?: string | null
   vendor_code: string | null
   nm_id: number | null
+  order_count?: number | null
   delivery_quantity?: number | null
   refusal_quantity?: number | null
+  return_quantity?: number | null
   sales_quantity: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null
@@ -29,6 +31,7 @@ export type EconomicsSizeItem = {
   ts_name?: string | null
   delivery_quantity?: number | null
   refusal_quantity?: number | null
+  return_quantity?: number | null
   sales_quantity: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null
@@ -51,8 +54,10 @@ export type EconomicsSizeItem = {
 }
 
 export type EconomicsTotals = {
+  order_count?: number | null
   delivery_quantity?: number | null
   refusal_quantity?: number | null
+  return_quantity?: number | null
   sales_quantity?: number | null
   buyout_percent?: number | null
   realization_before_spp?: number | null

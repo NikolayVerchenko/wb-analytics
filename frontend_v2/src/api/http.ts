@@ -1,3 +1,74 @@
+import { clearSession, getAccessToken, refreshSession } from '../auth/store'
+
+const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim()
+const apiBaseUrl = rawApiBaseUrl ? rawApiBaseUrl.replace(/\/$/, '') : ''
+
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+
+  if (!path.startsWith('/')) {
+    return `${apiBaseUrl}/${path}`
+  }
+
+  return `${apiBaseUrl}${path}`
+}
+
+async function buildErrorMessage(response: Response): Promise<string> {
+  const text = await response.text()
+  if (!text) {
+    return `Request failed with status ${response.status}`
+  }
+
+  try {
+    const payload = JSON.parse(text) as { detail?: unknown }
+    if (typeof payload.detail === 'string' && payload.detail) {
+      return payload.detail
+    }
+  } catch {
+    // keep raw text fallback
+  }
+
+  return text
+}
+
+async function requestWithAuth(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const requestTarget = typeof input === 'string' ? apiUrl(input) : input
+
+  const attempt = async (): Promise<Response> => {
+    const headers = new Headers(init.headers ?? {})
+    const accessToken = getAccessToken()
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`)
+    }
+
+    return fetch(requestTarget, {
+      ...init,
+      credentials: 'include',
+      headers,
+    })
+  }
+
+  let response = await attempt()
+  if (response.status !== 401) {
+    return response
+  }
+
+  const refreshed = await refreshSession()
+  if (!refreshed) {
+    clearSession()
+    return response
+  }
+
+  response = await attempt()
+  if (response.status === 401) {
+    clearSession()
+  }
+
+  return response
+}
+
 export async function apiGet<T>(
   url: string,
   params?: Record<string, string | number | boolean | string[] | null | undefined>,
@@ -26,15 +97,55 @@ export async function apiGet<T>(
   }
 
   const requestUrl = searchParams.size > 0 ? `${url}?${searchParams.toString()}` : url
-  const response = await fetch(requestUrl, {
+  const response = await requestWithAuth(requestUrl, {
     method: 'GET',
-    credentials: 'include',
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Request failed with status ${response.status}`)
+    throw new Error(await buildErrorMessage(response))
   }
 
   return response.json() as Promise<T>
+}
+
+export async function apiPost<TResponse, TBody extends object>(
+  url: string,
+  body: TBody,
+): Promise<TResponse> {
+  const response = await requestWithAuth(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    throw new Error(await buildErrorMessage(response))
+  }
+
+  return response.json() as Promise<TResponse>
+}
+
+export async function apiPut<TResponse, TBody extends object>(
+  url: string,
+  body: TBody,
+): Promise<TResponse> {
+  const response = await requestWithAuth(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    throw new Error(await buildErrorMessage(response))
+  }
+
+  if (response.status === 204) {
+    return undefined as TResponse
+  }
+
+  return response.json() as Promise<TResponse>
 }

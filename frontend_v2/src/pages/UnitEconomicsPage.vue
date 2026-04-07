@@ -1,41 +1,37 @@
 <template>
-  <section class="stack">
-    <div class="card stack">
-      <div>
-        <h2 class="page-title">Юнит-экономика</h2>
-        <p class="page-description">
-          Страница читает `account_id`, `table_*` и `dashboard_*` query params и запрашивает
-          `/api/economics/period-items` и `/api/economics/dashboard`.
-        </p>
-      </div>
-
-      <div class="filters">
-        <div class="field">
-          <label for="account-id">Account ID</label>
-          <input id="account-id" :value="accountId || ''" type="text" disabled />
+  <section class="unit-econ-page">
+    <header class="unit-econ-hero">
+      <div class="unit-econ-hero-main">
+        <h1 class="page-title">Полная аналитика</h1>
+        <p class="page-description">Подробная экономика по SKU: KPI, полная таблица метрик и детализация по размерам.</p>
+        <div class="unit-econ-hero-meta">
+          <span v-if="accountId" class="account-badge">Кабинет: {{ accountId }}</span>
+          <span v-else class="account-badge account-badge-muted">Кабинет не выбран</span>
         </div>
       </div>
-    </div>
 
-    <div v-if="!accountId" class="message message-empty">
-      Выберите кабинет на странице кабинетов, чтобы загрузить данные.
-    </div>
+      <div class="unit-econ-hero-actions">
+        <div class="unit-econ-hero-actions-title">Управление</div>
+        <div class="unit-econ-hero-actions-body">
+          <span v-if="accountId" class="account-pill">ID: {{ accountId }}</span>
+          <span v-else class="account-pill account-pill-muted">Выберите кабинет</span>
+        </div>
+      </div>
+    </header>
+
+    <UiStateBlock
+      v-if="!accountId"
+      title="Кабинет не выбран"
+      description="Выберите кабинет, чтобы загрузить данные и увидеть аналитику."
+      variant="empty"
+    />
 
     <template v-else>
-      <template v-if="dashboardLoading">
-        <div class="message message-info">Загрузка дашборда...</div>
-      </template>
-      <template v-else-if="dashboardError">
-        <div class="message message-error">{{ dashboardError }}</div>
-      </template>
-      <template v-else-if="dashboardEmpty">
-        <div class="message message-empty">Для дашборда нет данных за выбранный период.</div>
-      </template>
-      <template v-else>
-        <EconomicsDashboard :metrics="dashboardMetrics">
-          <template #header>
+      <section class="unit-econ-section">
+        <template v-if="dashboardLoading">
+          <div class="card dashboard-panel">
             <EconomicsSectionToolbar
-              title="Дашборд"
+              title="Полная аналитика"
               :account-id="accountId"
               :date-from="dashboardForm.date_from"
               :date-to="dashboardForm.date_to"
@@ -44,30 +40,72 @@
               @filters-apply="handleDashboardFiltersApply"
               @filters-reset="handleDashboardFiltersReset"
             />
-          </template>
-        </EconomicsDashboard>
-      </template>
+            <EconomicsDashboardSkeleton />
+          </div>
+        </template>
+        <template v-else-if="dashboardError">
+          <div class="card dashboard-panel">
+            <EconomicsSectionToolbar
+              title="Полная аналитика"
+              :account-id="accountId"
+              :date-from="dashboardForm.date_from"
+              :date-to="dashboardForm.date_to"
+              :filters="dashboardSelectedFilters"
+              @period-apply="handleDashboardPeriodApply"
+              @filters-apply="handleDashboardFiltersApply"
+              @filters-reset="handleDashboardFiltersReset"
+            />
+            <UiStateBlock
+              title="Не удалось загрузить дашборд"
+              description="Попробуйте обновить страницу или изменить период."
+              variant="error"
+              action-label="Повторить"
+              @action="retryDashboard"
+            />
+          </div>
+        </template>
+        <template v-else-if="dashboardEmpty">
+          <div class="card dashboard-panel">
+            <EconomicsSectionToolbar
+              title="Полная аналитика"
+              :account-id="accountId"
+              :date-from="dashboardForm.date_from"
+              :date-to="dashboardForm.date_to"
+              :filters="dashboardSelectedFilters"
+              @period-apply="handleDashboardPeriodApply"
+              @filters-apply="handleDashboardFiltersApply"
+              @filters-reset="handleDashboardFiltersReset"
+            />
+            <UiStateBlock
+              title="Нет данных за выбранный период"
+              description="Попробуйте выбрать другие даты или снять фильтры."
+              variant="empty"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <EconomicsDashboard :metrics="dashboardMetrics">
+            <template #header>
+              <EconomicsSectionToolbar
+                title="Полная аналитика"
+                :account-id="accountId"
+                :date-from="dashboardForm.date_from"
+                :date-to="dashboardForm.date_to"
+                :filters="dashboardSelectedFilters"
+                @period-apply="handleDashboardPeriodApply"
+                @filters-apply="handleDashboardFiltersApply"
+                @filters-reset="handleDashboardFiltersReset"
+              />
+            </template>
+          </EconomicsDashboard>
+        </template>
+      </section>
 
-      <template v-if="tableLoading">
-        <div class="message message-info">Загрузка таблицы...</div>
-      </template>
-      <template v-else-if="tableError">
-        <div class="message message-error">{{ tableError }}</div>
-      </template>
-      <template v-else-if="tableEmpty">
-        <div class="message message-empty">Для таблицы нет данных за выбранный период.</div>
-      </template>
-      <template v-else>
-        <EconomicsTable
-          :items="items"
-          :totals="totals"
-          :expanded-item-keys="expandedItemKeys"
-          :sizes-by-item="sizesByItem"
-          :sizes-loading-by-item="sizesLoadingByItem"
-          :sizes-error-by-item="sizesErrorByItem"
-          @toggle-item="toggleItem"
-        >
-          <template #header>
+      <div class="section-divider"></div>
+
+      <section class="unit-econ-section">
+        <template v-if="tableLoading">
+          <div class="card stack">
             <EconomicsSectionToolbar
               title="Товары"
               :account-id="accountId"
@@ -78,17 +116,85 @@
               @filters-apply="handleFiltersApply"
               @filters-reset="handleFiltersReset"
             />
-          </template>
-        </EconomicsTable>
-      </template>
+            <EconomicsTableSkeleton />
+          </div>
+        </template>
+        <template v-else-if="tableError">
+          <div class="card stack">
+            <EconomicsSectionToolbar
+              title="Товары"
+              :account-id="accountId"
+              :date-from="form.date_from"
+              :date-to="form.date_to"
+              :filters="selectedFilters"
+              @period-apply="handlePeriodApply"
+              @filters-apply="handleFiltersApply"
+              @filters-reset="handleFiltersReset"
+            />
+            <UiStateBlock
+              title="Не удалось загрузить таблицу"
+              description="Попробуйте обновить страницу или изменить параметры фильтра."
+              variant="error"
+              action-label="Повторить"
+              @action="retryTable"
+            />
+          </div>
+        </template>
+        <template v-else-if="tableEmpty">
+          <div class="card stack">
+            <EconomicsSectionToolbar
+              title="Товары"
+              :account-id="accountId"
+              :date-from="form.date_from"
+              :date-to="form.date_to"
+              :filters="selectedFilters"
+              @period-apply="handlePeriodApply"
+              @filters-apply="handleFiltersApply"
+              @filters-reset="handleFiltersReset"
+            />
+            <UiStateBlock
+              title="Нет данных за выбранный период"
+              description="Попробуйте изменить даты или фильтры."
+              variant="empty"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <EconomicsTable
+            :items="items"
+            :totals="totals"
+            :expanded-item-keys="expandedItemKeys"
+            :sizes-by-item="sizesByItem"
+            :sizes-loading-by-item="sizesLoadingByItem"
+            :sizes-error-by-item="sizesErrorByItem"
+            @toggle-item="toggleItem"
+          >
+            <template #header>
+              <EconomicsSectionToolbar
+                title="Товары"
+                :account-id="accountId"
+                :date-from="form.date_from"
+                :date-to="form.date_to"
+                :filters="selectedFilters"
+                @period-apply="handlePeriodApply"
+                @filters-apply="handleFiltersApply"
+                @filters-reset="handleFiltersReset"
+              />
+            </template>
+          </EconomicsTable>
+        </template>
+      </section>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
 import EconomicsDashboard from '../components/EconomicsDashboard.vue'
+import EconomicsDashboardSkeleton from '../components/EconomicsDashboardSkeleton.vue'
 import EconomicsSectionToolbar from '../components/EconomicsSectionToolbar.vue'
 import EconomicsTable from '../components/EconomicsTable.vue'
+import EconomicsTableSkeleton from '../components/EconomicsTableSkeleton.vue'
+import UiStateBlock from '../components/UiStateBlock.vue'
 import { useEconomicsPage } from '../composables/useEconomicsPage'
 
 const {
@@ -118,4 +224,17 @@ const {
   handleDashboardFiltersReset,
   handleDashboardPeriodApply,
 } = useEconomicsPage()
+
+const retryDashboard = () =>
+  handleDashboardPeriodApply({
+    date_from: dashboardForm.value.date_from,
+    date_to: dashboardForm.value.date_to,
+  })
+const retryTable = () =>
+  handlePeriodApply({
+    date_from: form.value.date_from,
+    date_to: form.value.date_to,
+  })
 </script>
+
+

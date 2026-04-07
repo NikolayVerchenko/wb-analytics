@@ -8,7 +8,9 @@ with paid_storage_base as (
         psc.nm_id,
         lower(btrim(psc.vendor_code)) as vendor_code_norm,
         lower(btrim(coalesce(psc.size, ''))) as size_norm,
-        sum(coalesce(psc.warehouse_price, 0))::numeric as paid_storage_cost
+        sum(coalesce(psc.warehouse_price, 0))::numeric as paid_storage_cost,
+        max(psc.subject) as subject_name,
+        max(psc.brand) as brand_name
     from core.paid_storage_costs psc
     group by
         psc.account_id,
@@ -105,16 +107,35 @@ daily_base as (
         rw.nm_id,
         rw.sa_name,
         rw.ts_name
+),
+base_keys as (
+    select
+        db.account_id,
+        db.calendar_date,
+        db.week_start,
+        db.nm_id,
+        lower(btrim(db.vendor_code)) as vendor_code,
+        lower(btrim(coalesce(db.ts_name, ''))) as ts_name
+    from daily_base db
+    union
+    select
+        psb.account_id,
+        psb.calendar_date,
+        date_trunc('week', psb.calendar_date::timestamp)::date as week_start,
+        psb.nm_id,
+        psb.vendor_code_norm as vendor_code,
+        psb.size_norm as ts_name
+    from paid_storage_base psb
 )
 select
-    db.account_id,
-    db.calendar_date,
-    db.week_start,
-    db.nm_id,
-    db.vendor_code,
-    db.ts_name,
-    db.brand_name,
-    db.subject_name,
+    bk.account_id,
+    bk.calendar_date,
+    bk.week_start,
+    bk.nm_id,
+    coalesce(db.vendor_code, bk.vendor_code) as vendor_code,
+    coalesce(db.ts_name, bk.ts_name) as ts_name,
+    coalesce(db.brand_name, psb.brand_name) as brand_name,
+    coalesce(db.subject_name, psb.subject_name) as subject_name,
     db.bonus_type_name,
     db.sales_quantity,
     db.return_quantity,
@@ -204,19 +225,26 @@ select
             ) / coalesce(cb.cogs_amount, 0)
         ) * 100, 2)
     end::numeric as roi_percent
-from daily_base db
+from base_keys bk
+left join daily_base db
+  on db.account_id = bk.account_id
+ and db.calendar_date = bk.calendar_date
+ and db.week_start = bk.week_start
+ and db.nm_id = bk.nm_id
+ and lower(btrim(db.vendor_code)) = lower(btrim(bk.vendor_code))
+ and lower(btrim(coalesce(db.ts_name, ''))) = lower(btrim(coalesce(bk.ts_name, '')))
 left join cogs_base cb
-  on cb.account_id = db.account_id
- and cb.calendar_date = db.calendar_date
- and cb.week_start = db.week_start
- and cb.nm_id = db.nm_id
- and lower(btrim(cb.vendor_code)) = lower(btrim(db.vendor_code))
- and lower(btrim(coalesce(cb.ts_name, ''))) = lower(btrim(coalesce(db.ts_name, '')))
+  on cb.account_id = bk.account_id
+ and cb.calendar_date = bk.calendar_date
+ and cb.week_start = bk.week_start
+ and cb.nm_id = bk.nm_id
+ and lower(btrim(cb.vendor_code)) = lower(btrim(bk.vendor_code))
+ and lower(btrim(coalesce(cb.ts_name, ''))) = lower(btrim(coalesce(bk.ts_name, '')))
 left join tax_settings ts
-  on ts.account_id = db.account_id
+  on ts.account_id = bk.account_id
 left join paid_storage_base psb
-  on psb.account_id = db.account_id
- and psb.calendar_date = db.calendar_date
- and psb.nm_id = db.nm_id
- and psb.vendor_code_norm = lower(btrim(db.vendor_code))
- and psb.size_norm = lower(btrim(coalesce(db.ts_name, '')));
+  on psb.account_id = bk.account_id
+ and psb.calendar_date = bk.calendar_date
+ and psb.nm_id = bk.nm_id
+ and psb.vendor_code_norm = lower(btrim(bk.vendor_code))
+ and psb.size_norm = lower(btrim(coalesce(bk.ts_name, '')));

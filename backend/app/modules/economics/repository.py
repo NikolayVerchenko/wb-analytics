@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from time import perf_counter
 from uuid import UUID
 
 import psycopg
@@ -24,114 +25,9 @@ class EconomicsRepository:
     ) -> tuple[str, tuple]:
         search_value = f'%{search.strip()}%' if search and search.strip() else None
         base_sql = """
-            with closed_dates as (
-                -- ensure predicate pushdown for views
-                select distinct calendar_date
-                from mart.sku_unit_economics_day_item_closed
-                where account_id = %s
-                  and calendar_date between %s and %s
-            ),
-            all_items as (
+            with aggregated as (
                 select
-                    'closed'::text as source_mode,
-                    account_id,
-                    calendar_date,
-                    week_start,
-                    nm_id,
-                    vendor_code,
-                    brand_name,
-                    subject_name,
-                    bonus_type_name,
-                    account_name,
-                    photo_url,
-                    sales_quantity,
-                    return_quantity,
-                    retail_price_sale,
-                    retail_price_return,
-                    realization_before_spp,
-                    retail_amount_sale,
-                    retail_amount_return,
-                    realization_after_spp,
-                    spp_amount,
-                    spp_percent,
-                    ppvz_for_pay_sale,
-                    ppvz_for_pay_return,
-                    seller_transfer,
-                    delivery_quantity,
-                    refusal_quantity,
-                    buyout_percent,
-                    delivery_cost,
-                    penalty_cost,
-                    cashback_amount,
-                    paid_storage_cost,
-                    advert_cost,
-                    acceptance_cost,
-                    wb_commission_amount,
-                    wb_commission_percent,
-                    tax_amount,
-                    cogs_amount,
-                    profit_amount,
-                    margin_percent,
-                    roi_percent
-                from mart.sku_unit_economics_day_item_closed
-                where account_id = %s
-                  and calendar_date between %s and %s
-
-                union all
-
-                select
-                    'current'::text as source_mode,
-                    account_id,
-                    calendar_date,
-                    week_start,
-                    nm_id,
-                    vendor_code,
-                    brand_name,
-                    subject_name,
-                    bonus_type_name,
-                    account_name,
-                    photo_url,
-                    sales_quantity,
-                    return_quantity,
-                    retail_price_sale,
-                    retail_price_return,
-                    realization_before_spp,
-                    retail_amount_sale,
-                    retail_amount_return,
-                    realization_after_spp,
-                    spp_amount,
-                    spp_percent,
-                    ppvz_for_pay_sale,
-                    ppvz_for_pay_return,
-                    seller_transfer,
-                    delivery_quantity,
-                    refusal_quantity,
-                    buyout_percent,
-                    delivery_cost,
-                    penalty_cost,
-                    cashback_amount,
-                    paid_storage_cost,
-                    advert_cost,
-                    acceptance_cost,
-                    wb_commission_amount,
-                    wb_commission_percent,
-                    tax_amount,
-                    cogs_amount,
-                    profit_amount,
-                    margin_percent,
-                    roi_percent
-                from mart.sku_unit_economics_day_item_current
-                where account_id = %s
-                  and calendar_date between %s and %s
-                  and not exists (
-                    select 1
-                    from closed_dates cd
-                    where cd.calendar_date = mart.sku_unit_economics_day_item_current.calendar_date
-                  )
-            ),
-            aggregated as (
-                select
-                    case when count(distinct source_mode) = 1 then max(source_mode) else 'mixed' end as source_mode,
+                    'serving'::text as source_mode,
                     account_id,
                     %s::date as date_from,
                     %s::date as date_to,
@@ -143,6 +39,7 @@ class EconomicsRepository:
                     string_agg(distinct nullif(btrim(bonus_type_name), ''), '; ') as bonus_type_name,
                     max(account_name) as account_name,
                     max(photo_url) as photo_url,
+                    sum(coalesce(order_count, 0))::bigint as order_count,
                     sum(coalesce(sales_quantity, 0))::bigint as sales_quantity,
                     sum(coalesce(return_quantity, 0))::bigint as return_quantity,
                     sum(coalesce(retail_price_sale, 0))::numeric as retail_price_sale,
@@ -187,7 +84,9 @@ class EconomicsRepository:
                         when sum(coalesce(cogs_amount, 0)) = 0 then null
                         else round((sum(coalesce(profit_amount, 0)) / sum(coalesce(cogs_amount, 0))) * 100, 2)
                     end::numeric as roi_percent
-                from all_items
+                from mart.ui_item_day
+                where account_id = %s
+                  and calendar_date between %s and %s
                 group by account_id, nm_id, vendor_code
             ),
             filtered as (
@@ -203,15 +102,9 @@ class EconomicsRepository:
             )
         """
         base_params = (
-            account_id,
             date_from,
             date_to,
             account_id,
-            date_from,
-            date_to,
-            account_id,
-            date_from,
-            date_to,
             date_from,
             date_to,
             search_value,
@@ -230,14 +123,41 @@ class EconomicsRepository:
         )
         return base_sql, base_params
 
-    @staticmethod
-    def _totals_select_sql() -> str:
-        return """
-            , totals as (
+    def _build_dashboard_totals_query(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+        search: str | None,
+        subjects: list[str] | None,
+        brands: list[str] | None,
+        articles: list[str] | None,
+        only_negative_profit: bool,
+        min_profit: Decimal | None,
+        max_profit: Decimal | None,
+    ) -> tuple[str, tuple]:
+        search_value = f'%{search.strip()}%' if search and search.strip() else None
+        sql = """
+            with filtered as (
+                select *
+                from mart.ui_item_day
+                where account_id = %s
+                  and calendar_date between %s and %s
+                  and (%s::text is null or vendor_code ilike %s::text)
+                  and (%s::text[] is null or subject_name = any(%s::text[]))
+                  and (%s::text[] is null or brand_name = any(%s::text[]))
+                  and (%s::text[] is null or vendor_code = any(%s::text[]))
+                  and (%s = false or profit_amount < 0)
+                  and (%s::numeric is null or profit_amount >= %s::numeric)
+                  and (%s::numeric is null or profit_amount <= %s::numeric)
+            ),
+            totals as (
                 select
+                    coalesce(sum(coalesce(order_count, 0)), 0)::numeric as order_count,
                     coalesce(sum(coalesce(sales_quantity, 0)), 0)::numeric as sales_quantity,
                     coalesce(sum(coalesce(delivery_quantity, 0)), 0)::numeric as delivery_quantity,
                     coalesce(sum(coalesce(refusal_quantity, 0)), 0)::numeric as refusal_quantity,
+                    coalesce(sum(coalesce(return_quantity, 0)), 0)::numeric as return_quantity,
                     coalesce(sum(coalesce(realization_before_spp, 0)), 0)::numeric as realization_before_spp,
                     coalesce(sum(coalesce(realization_after_spp, 0)), 0)::numeric as realization_after_spp,
                     coalesce(sum(coalesce(spp_amount, 0)), 0)::numeric as spp_amount,
@@ -254,9 +174,11 @@ class EconomicsRepository:
                 from filtered
             )
             select
+                order_count,
                 sales_quantity,
                 delivery_quantity,
                 refusal_quantity,
+                return_quantity,
                 case
                     when delivery_quantity = 0 then null
                     else round((sales_quantity / delivery_quantity) * 100, 2)
@@ -292,7 +214,25 @@ class EconomicsRepository:
                 end::numeric as roi_percent
             from totals
         """
-
+        params = (
+            account_id,
+            date_from,
+            date_to,
+            search_value,
+            search_value,
+            subjects,
+            subjects,
+            brands,
+            brands,
+            articles,
+            articles,
+            only_negative_profit,
+            min_profit,
+            min_profit,
+            max_profit,
+            max_profit,
+        )
+        return sql, params
     def list_period_items(
         self,
         account_id: UUID,
@@ -322,22 +262,98 @@ class EconomicsRepository:
                 min_profit=min_profit,
                 max_profit=max_profit,
             )
-            totals_sql = base_sql + self._totals_select_sql()
-            cur.execute(totals_sql, base_params)
-            totals_row = cur.fetchone() or {}
-
-            items_sql = (
+            combined_sql = (
                 base_sql
                 + f"""
-                select *
-                from filtered
-                order by {order_by}
-                limit %s
-                offset %s
+                , totals as (
+                    select
+                        coalesce(sum(coalesce(order_count, 0)), 0)::numeric as order_count,
+                        coalesce(sum(coalesce(sales_quantity, 0)), 0)::numeric as sales_quantity,
+                        coalesce(sum(coalesce(delivery_quantity, 0)), 0)::numeric as delivery_quantity,
+                        coalesce(sum(coalesce(refusal_quantity, 0)), 0)::numeric as refusal_quantity,
+                        coalesce(sum(coalesce(return_quantity, 0)), 0)::numeric as return_quantity,
+                        coalesce(sum(coalesce(realization_before_spp, 0)), 0)::numeric as realization_before_spp,
+                        coalesce(sum(coalesce(realization_after_spp, 0)), 0)::numeric as realization_after_spp,
+                        coalesce(sum(coalesce(spp_amount, 0)), 0)::numeric as spp_amount,
+                        coalesce(sum(coalesce(seller_transfer, 0)), 0)::numeric as seller_transfer,
+                        coalesce(sum(coalesce(wb_commission_amount, 0)), 0)::numeric as wb_commission_amount,
+                        coalesce(sum(coalesce(advert_cost, 0)), 0)::numeric as advert_cost,
+                        coalesce(sum(coalesce(delivery_cost, 0)), 0)::numeric as delivery_cost,
+                        coalesce(sum(coalesce(paid_storage_cost, 0)), 0)::numeric as paid_storage_cost,
+                        coalesce(sum(coalesce(penalty_cost, 0)), 0)::numeric as penalty_cost,
+                        coalesce(sum(coalesce(acceptance_cost, 0)), 0)::numeric as acceptance_cost,
+                        coalesce(sum(coalesce(tax_amount, 0)), 0)::numeric as tax_amount,
+                        coalesce(sum(coalesce(cogs_amount, 0)), 0)::numeric as cogs_amount,
+                        coalesce(sum(coalesce(profit_amount, 0)), 0)::numeric as profit_amount
+                    from filtered
+                ),
+                totals_row as (
+                    select
+                        order_count,
+                        sales_quantity,
+                        delivery_quantity,
+                        refusal_quantity,
+                        return_quantity,
+                        case
+                            when delivery_quantity = 0 then null
+                            else round((sales_quantity / delivery_quantity) * 100, 2)
+                        end::numeric as buyout_percent,
+                        realization_before_spp,
+                        realization_after_spp,
+                        spp_amount,
+                        case
+                            when realization_before_spp = 0 then null
+                            else round((spp_amount / realization_before_spp) * 100, 2)
+                        end::numeric as spp_percent,
+                        seller_transfer,
+                        wb_commission_amount,
+                        case
+                            when realization_before_spp = 0 then null
+                            else round((wb_commission_amount / realization_before_spp) * 100, 2)
+                        end::numeric as wb_commission_percent,
+                        advert_cost,
+                        delivery_cost,
+                        paid_storage_cost,
+                        penalty_cost,
+                        acceptance_cost,
+                        tax_amount,
+                        cogs_amount,
+                        profit_amount,
+                        case
+                            when realization_before_spp = 0 then null
+                            else round((profit_amount / realization_before_spp) * 100, 2)
+                        end::numeric as margin_percent,
+                        case
+                            when cogs_amount = 0 then null
+                            else round((profit_amount / cogs_amount) * 100, 2)
+                        end::numeric as roi_percent
+                    from totals
+                ),
+                paged as (
+                    select *
+                    from filtered
+                    order by {order_by}
+                    limit %s
+                    offset %s
+                )
+                select
+                    (select row_to_json(t) from totals_row t) as totals,
+                    coalesce((select json_agg(row_to_json(p)) from paged p), '[]'::json) as items
                 """
             )
-            cur.execute(items_sql, base_params + (limit, offset))
-            return list(cur.fetchall()), totals_row
+            started_at = perf_counter()
+            cur.execute(combined_sql, base_params + (limit, offset))
+            result = cur.fetchone() or {}
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            totals_row = result.get('totals') or {}
+            rows = result.get('items') or []
+            print(
+                'economics_period_items_timing '
+                f'account_id={account_id} date_from={date_from} date_to={date_to} '
+                f'limit={limit} offset={offset} rows={len(rows)} '
+                f'combined_ms={elapsed_ms:.1f}'
+            )
+            return rows, totals_row
 
     def get_period_totals(
         self,
@@ -353,7 +369,7 @@ class EconomicsRepository:
         max_profit: Decimal | None,
     ) -> dict:
         with self._conn.cursor() as cur:
-            base_sql, base_params = self._build_period_items_base_query(
+            sql, params = self._build_dashboard_totals_query(
                 account_id=account_id,
                 date_from=date_from,
                 date_to=date_to,
@@ -365,8 +381,16 @@ class EconomicsRepository:
                 min_profit=min_profit,
                 max_profit=max_profit,
             )
-            cur.execute(base_sql + self._totals_select_sql(), base_params)
-            return cur.fetchone() or {}
+            started_at = perf_counter()
+            cur.execute(sql, params)
+            row = cur.fetchone() or {}
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            print(
+                'economics_period_totals_timing '
+                f'account_id={account_id} date_from={date_from} date_to={date_to} '
+                f'elapsed_ms={elapsed_ms:.1f}'
+            )
+            return row
 
     def list_period_sizes(
         self,
@@ -379,113 +403,6 @@ class EconomicsRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                with closed_dates as (
-                    -- ensure predicate pushdown for views
-                    select distinct calendar_date
-                    from mart.sku_unit_economics_day_closed
-                    where account_id = %s
-                      and calendar_date between %s and %s
-                ),
-                all_sizes as (
-                    select
-                        'closed'::text as source_mode,
-                        account_id,
-                        calendar_date,
-                        week_start,
-                        nm_id,
-                        vendor_code,
-                        ts_name,
-                        brand_name,
-                        subject_name,
-                        bonus_type_name,
-                        account_name,
-                        photo_url,
-                        sales_quantity,
-                        return_quantity,
-                        retail_price_sale,
-                        retail_price_return,
-                        realization_before_spp,
-                        retail_amount_sale,
-                        retail_amount_return,
-                        realization_after_spp,
-                        spp_amount,
-                        spp_percent,
-                        ppvz_for_pay_sale,
-                        ppvz_for_pay_return,
-                        seller_transfer,
-                        delivery_quantity,
-                        refusal_quantity,
-                        buyout_percent,
-                        delivery_cost,
-                        penalty_cost,
-                        cashback_amount,
-                        paid_storage_cost,
-                        wb_commission_amount,
-                        wb_commission_percent,
-                        tax_amount,
-                        cogs_amount,
-                        profit_amount,
-                        margin_percent,
-                        roi_percent
-                    from mart.sku_unit_economics_day_closed
-                    where account_id = %s
-                      and calendar_date between %s and %s
-                      and nm_id = %s
-                      and vendor_code = %s
-
-                    union all
-
-                    select
-                        'current'::text as source_mode,
-                        account_id,
-                        calendar_date,
-                        week_start,
-                        nm_id,
-                        vendor_code,
-                        ts_name,
-                        brand_name,
-                        subject_name,
-                        bonus_type_name,
-                        account_name,
-                        photo_url,
-                        sales_quantity,
-                        return_quantity,
-                        retail_price_sale,
-                        retail_price_return,
-                        realization_before_spp,
-                        retail_amount_sale,
-                        retail_amount_return,
-                        realization_after_spp,
-                        spp_amount,
-                        spp_percent,
-                        ppvz_for_pay_sale,
-                        ppvz_for_pay_return,
-                        seller_transfer,
-                        delivery_quantity,
-                        refusal_quantity,
-                        buyout_percent,
-                        delivery_cost,
-                        penalty_cost,
-                        cashback_amount,
-                        paid_storage_cost,
-                        wb_commission_amount,
-                        wb_commission_percent,
-                        tax_amount,
-                        cogs_amount,
-                        profit_amount,
-                        margin_percent,
-                        roi_percent
-                    from mart.sku_unit_economics_day_current
-                    where account_id = %s
-                      and calendar_date between %s and %s
-                      and nm_id = %s
-                      and vendor_code = %s
-                      and not exists (
-                        select 1
-                        from closed_dates cd
-                        where cd.calendar_date = mart.sku_unit_economics_day_current.calendar_date
-                      )
-                )
                 select
                     case when count(distinct source_mode) = 1 then max(source_mode) else 'mixed' end as source_mode,
                     account_id,
@@ -542,12 +459,15 @@ class EconomicsRepository:
                         when sum(coalesce(realization_before_spp, 0)) = 0 then null
                         else round((sum(coalesce(wb_commission_amount, 0)) / sum(coalesce(realization_before_spp, 0))) * 100, 2)
                     end::numeric as wb_commission_percent
-                from all_sizes
+                from mart.ui_item_size_day
+                where account_id = %s
+                  and calendar_date between %s and %s
+                  and nm_id = %s
+                  and vendor_code = %s
                 group by account_id, nm_id, vendor_code, ts_name
                 order by ts_name nulls first
                 """,
                 (
-                    account_id,
                     date_from,
                     date_to,
                     account_id,
@@ -555,13 +475,6 @@ class EconomicsRepository:
                     date_to,
                     nm_id,
                     vendor_code,
-                    account_id,
-                    date_from,
-                    date_to,
-                    nm_id,
-                    vendor_code,
-                    date_from,
-                    date_to,
                 ),
             )
             return list(cur.fetchall())
@@ -576,37 +489,15 @@ class EconomicsRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                with closed_dates as (
-                    select distinct calendar_date
-                    from mart.sku_unit_economics_day_item_closed
-                    where account_id = %s
-                      and calendar_date between %s and %s
-                ),
-                all_items as (
+                with all_items as (
                     select
                         subject_name,
                         brand_name,
                         vendor_code,
                         nm_id
-                    from mart.sku_unit_economics_day_item_closed
+                    from mart.ui_item_day
                     where account_id = %s
                       and calendar_date between %s and %s
-
-                    union all
-
-                    select
-                        subject_name,
-                        brand_name,
-                        vendor_code,
-                        nm_id
-                    from mart.sku_unit_economics_day_item_current
-                    where account_id = %s
-                      and calendar_date between %s and %s
-                      and not exists (
-                        select 1
-                        from closed_dates cd
-                        where cd.calendar_date = mart.sku_unit_economics_day_item_current.calendar_date
-                      )
                 ),
                 subjects as (
                     select distinct btrim(subject_name) as value
@@ -655,12 +546,6 @@ class EconomicsRepository:
                     ) as articles
                 """,
                 (
-                    account_id,
-                    date_from,
-                    date_to,
-                    account_id,
-                    date_from,
-                    date_to,
                     account_id,
                     date_from,
                     date_to,

@@ -8,7 +8,7 @@ import psycopg
 
 def canonical_payload_hash(payload: object) -> str:
     serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
 
 def create_raw_load_run(
@@ -46,13 +46,46 @@ def create_raw_load_run(
                 source,
                 period_from,
                 period_to,
-                "started",
+                'started',
                 0,
                 None,
                 period_mode,
                 week_start,
             ),
         )
+
+
+def resume_raw_load_run(
+    conn: psycopg.Connection,
+    *,
+    load_id: UUID,
+    rows_loaded: int,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            update raw.load_runs
+            set status = 'started',
+                rows_loaded = %s,
+                error = null
+            where load_id = %s
+            """,
+            (rows_loaded, load_id),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError(f'Cannot resume raw load: load_id={load_id} not found')
+
+def raw_load_run_exists(
+    conn: psycopg.Connection,
+    *,
+    load_id: UUID,
+) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "select 1 from raw.load_runs where load_id = %s",
+            (load_id,),
+        )
+        return cur.fetchone() is not None
 
 
 def update_raw_load_run(

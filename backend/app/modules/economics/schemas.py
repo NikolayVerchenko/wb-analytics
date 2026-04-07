@@ -18,6 +18,7 @@ class EconomicsPeriodItemRead(BaseModel):
     bonus_type_name: str | None
     account_name: str | None
     photo_url: str | None
+    order_count: int | None
     sales_quantity: int | None
     return_quantity: int | None
     retail_price_sale: Decimal | None
@@ -94,8 +95,10 @@ class EconomicsPeriodSizeRead(BaseModel):
 
 class EconomicsPeriodTotalsRead(BaseModel):
     sales_quantity: Decimal | None
+    order_count: Decimal | None
     delivery_quantity: Decimal | None
     refusal_quantity: Decimal | None
+    return_quantity: Decimal | None
     buyout_percent: Decimal | None
     realization_before_spp: Decimal | None
     realization_after_spp: Decimal | None

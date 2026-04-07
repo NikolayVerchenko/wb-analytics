@@ -2,11 +2,14 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SyncJobType(str, Enum):
     INITIAL_SALES_BACKFILL = "initial_sales_backfill"
+    SALES_FUNNEL_BACKFILL = "sales_funnel_backfill"
+    STOCK_SNAPSHOT_REFRESH = "stock_snapshot_refresh"
+    OPEN_WEEK_REFRESH = "open_week_refresh"
 
 
 class SyncMode(str, Enum):
@@ -16,6 +19,13 @@ class SyncMode(str, Enum):
 
 class SyncDataset(str, Enum):
     SALES = "sales"
+    CARDS = "cards"
+    ADVERTS_SNAPSHOT = "adverts_snapshot"
+    ADVERTS_COST = "adverts_cost"
+    ACCEPTANCE = "acceptance"
+    STORAGE = "storage"
+    SALES_FUNNEL = "sales_funnel"
+    WAREHOUSE_REMAINS = "warehouse_remains"
 
 
 class SyncJobStatus(str, Enum):
@@ -24,6 +34,7 @@ class SyncJobStatus(str, Enum):
     SUCCESS = "success"
     PARTIAL_SUCCESS = "partial_success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class SyncJobStepStatus(str, Enum):
@@ -32,6 +43,7 @@ class SyncJobStepStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
+    CANCELLED = "cancelled"
 
 
 class SyncJobCreate(BaseModel):
@@ -43,6 +55,10 @@ class SyncJobCreate(BaseModel):
     datasets: list[SyncDataset]
 
 
+class SyncJobRunRequest(BaseModel):
+    max_steps: int = Field(default=1, ge=1, le=20)
+
+
 class SyncJobStepRead(BaseModel):
     step_id: UUID
     job_id: UUID
@@ -52,6 +68,8 @@ class SyncJobStepRead(BaseModel):
     status: SyncJobStepStatus
     attempt: int
     error_message: str | None = None
+    payload_json: dict | None = None
+    next_retry_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
 

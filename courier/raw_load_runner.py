@@ -4,7 +4,7 @@ from uuid import UUID
 
 import psycopg
 
-from courier.raw_io import create_raw_load_run, update_raw_load_run
+from courier.raw_io import create_raw_load_run, resume_raw_load_run, update_raw_load_run
 
 
 @dataclass
@@ -31,11 +31,19 @@ class RawLoadRunner:
         )
         self.conn.commit()
 
+    def resume(self, *, rows_loaded: int) -> None:
+        resume_raw_load_run(
+            self.conn,
+            load_id=self.load_id,
+            rows_loaded=rows_loaded,
+        )
+        self.conn.commit()
+
     def succeed(self, rows_loaded: int) -> None:
         update_raw_load_run(
             self.conn,
             load_id=self.load_id,
-            status="success",
+            status='success',
             rows_loaded=rows_loaded,
             error=None,
         )
@@ -47,7 +55,7 @@ class RawLoadRunner:
             update_raw_load_run(
                 self.conn,
                 load_id=self.load_id,
-                status="failed",
+                status='failed',
                 rows_loaded=rows_loaded,
                 error=error,
             )

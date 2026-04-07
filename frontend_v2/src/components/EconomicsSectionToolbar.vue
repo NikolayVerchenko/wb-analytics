@@ -1,8 +1,11 @@
 <template>
-  <div class="table-header-bar">
-    <h3 class="table-header-title">{{ title }}</h3>
+  <div class="section-toolbar">
+    <div class="section-toolbar-title">
+      <h3 class="section-title">{{ title }}</h3>
+      <span v-if="accountId" class="section-meta">Кабинет: {{ accountId }}</span>
+    </div>
 
-    <div class="table-header-actions">
+    <div class="section-toolbar-actions section-toolbar-actions-compact">
       <PeriodFilter
         :date-from="dateFrom"
         :date-to="dateTo"
@@ -40,3 +43,9 @@ const emit = defineEmits<{
   'filters-reset': []
 }>()
 </script>
+
+<style scoped>
+.section-toolbar-actions-compact {
+  gap: 8px;
+}
+</style>

@@ -1,6 +1,6 @@
 create schema if not exists mart;
 
-create or replace view mart.sku_unit_economics_day_closed as
+create or replace view mart.sku_unit_economics_day_current as
 with primary_photos as (
     select
         p.account_id,
@@ -21,7 +21,7 @@ select
     f.bonus_type_name,
     acc.name as account_name,
     pp.photo_url,
-    f.sales_quantity,
+    (coalesce(f.sales_quantity, 0) - coalesce(f.return_quantity, 0))::bigint as sales_quantity,
     f.return_quantity,
     f.retail_price_sale,
     f.retail_price_return,
@@ -48,7 +48,7 @@ select
     f.profit_amount,
     f.margin_percent,
     f.roi_percent
-from mart.fact_unit_economics_day_size_closed f
+from mart.fact_unit_economics_day_size_current f
 left join core.accounts acc
   on acc.account_id = f.account_id
 left join primary_photos pp

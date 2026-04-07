@@ -5,6 +5,8 @@ import { useEconomicsItems } from './useEconomicsItems'
 import { useEconomicsSizes } from './useEconomicsSizes'
 import { useEconomicsTableQueryState } from './useEconomicsTableQueryState'
 
+const DASHBOARD_LOAD_DELAY_MS = 250
+
 export function useEconomicsPage() {
   const tableQueryState = useEconomicsTableQueryState()
   const dashboardQueryState = useEconomicsDashboardQueryState()
@@ -26,31 +28,74 @@ export function useEconomicsPage() {
     () => !dashboardLoading.value && !dashboardError.value && dashboardState.dashboardMetrics.value.length === 0,
   )
 
+
   watch(
-    () => tableQueryState.route.query,
+    () => ({
+      accountId: typeof tableQueryState.route.query.account_id === 'string' ? tableQueryState.route.query.account_id : '',
+      dateFrom: typeof tableQueryState.route.query.table_date_from === 'string' ? tableQueryState.route.query.table_date_from : '',
+      dateTo: typeof tableQueryState.route.query.table_date_to === 'string' ? tableQueryState.route.query.table_date_to : '',
+      subjects: tableQueryState.route.query.table_subjects,
+      brands: tableQueryState.route.query.table_brands,
+      articles: tableQueryState.route.query.table_articles,
+    }),
     async () => {
       tableQueryState.syncStateFromQuery()
+
+      await itemsState.loadItems({
+        accountId: tableQueryState.accountId.value,
+        dateFrom: tableQueryState.form.value.date_from,
+        dateTo: tableQueryState.form.value.date_to,
+        filters: tableQueryState.selectedFilters.value,
+        resetDetails: sizesState.resetSizesState,
+      })
+    },
+    { immediate: true },
+  )
+
+  watch(
+    () => ({
+      accountId: typeof dashboardQueryState.route.query.account_id === 'string' ? dashboardQueryState.route.query.account_id : '',
+      tableDateFrom: typeof dashboardQueryState.route.query.table_date_from === 'string' ? dashboardQueryState.route.query.table_date_from : '',
+      tableDateTo: typeof dashboardQueryState.route.query.table_date_to === 'string' ? dashboardQueryState.route.query.table_date_to : '',
+      tableSubjects: dashboardQueryState.route.query.table_subjects,
+      tableBrands: dashboardQueryState.route.query.table_brands,
+      tableArticles: dashboardQueryState.route.query.table_articles,
+      dashboardDateFrom: typeof dashboardQueryState.route.query.dashboard_date_from === 'string' ? dashboardQueryState.route.query.dashboard_date_from : '',
+      dashboardDateTo: typeof dashboardQueryState.route.query.dashboard_date_to === 'string' ? dashboardQueryState.route.query.dashboard_date_to : '',
+      dashboardSubjects: dashboardQueryState.route.query.dashboard_subjects,
+      dashboardBrands: dashboardQueryState.route.query.dashboard_brands,
+      dashboardArticles: dashboardQueryState.route.query.dashboard_articles,
+    }),
+    async () => {
       dashboardQueryState.syncStateFromQuery({
         date_from: tableQueryState.form.value.date_from,
         date_to: tableQueryState.form.value.date_to,
         filters: tableQueryState.selectedFilters.value,
       })
 
-      await Promise.all([
-        itemsState.loadItems({
-          accountId: tableQueryState.accountId.value,
-          dateFrom: tableQueryState.form.value.date_from,
-          dateTo: tableQueryState.form.value.date_to,
-          filters: tableQueryState.selectedFilters.value,
-          resetDetails: sizesState.resetSizesState,
-        }),
-        dashboardState.loadDashboard({
-          accountId: dashboardQueryState.accountId.value,
-          dateFrom: dashboardQueryState.form.value.date_from,
-          dateTo: dashboardQueryState.form.value.date_to,
-          filters: dashboardQueryState.selectedFilters.value,
-        }),
-      ])
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, DASHBOARD_LOAD_DELAY_MS)
+      })
+
+      await dashboardState.loadDashboard({
+        accountId: dashboardQueryState.accountId.value,
+        dateFrom: dashboardQueryState.form.value.date_from,
+        dateTo: dashboardQueryState.form.value.date_to,
+        filters: dashboardQueryState.selectedFilters.value,
+        comparePrevious: false,
+      })
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, DASHBOARD_LOAD_DELAY_MS)
+      })
+
+      await dashboardState.loadDashboard({
+        accountId: dashboardQueryState.accountId.value,
+        dateFrom: dashboardQueryState.form.value.date_from,
+        dateTo: dashboardQueryState.form.value.date_to,
+        filters: dashboardQueryState.selectedFilters.value,
+        comparePrevious: true,
+      })
     },
     { immediate: true },
   )
