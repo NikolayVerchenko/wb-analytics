@@ -1,0 +1,5 @@
+db/init/00_schemas.sql
+db/init/10_raw.sql
+db/init/20_core_base_part1.sql
+db/init/21_core_base_part2.sql
+db/init/30_core_views.sql
