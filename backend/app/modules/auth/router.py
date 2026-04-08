@@ -7,6 +7,7 @@ import psycopg
 
 from backend.app.db import db_connection
 from backend.app.settings import Settings, get_settings
+from backend.app.security.rate_limit import rate_limit_dependency
 from .cookies import clear_refresh_cookie, get_refresh_cookie, set_refresh_cookie
 from .deps import get_current_user, get_token_service
 from .repository import AuthRepository
@@ -27,12 +28,18 @@ from .service import AuthTokenService, PasswordHasher, PasswordResetService
 
 router = APIRouter()
 
+password_login_rate_limit = rate_limit_dependency('auth:password_login')
+password_register_rate_limit = rate_limit_dependency('auth:password_register')
+password_forgot_rate_limit = rate_limit_dependency('auth:password_forgot')
+password_reset_rate_limit = rate_limit_dependency('auth:password_reset')
+
 
 @router.post('/password/login', response_model=TokenPairResponse)
 def login_with_password(
     payload: PasswordLoginRequest,
     request: Request,
     response: Response,
+    _: None = Depends(password_login_rate_limit),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
     token_service: AuthTokenService = Depends(get_token_service),
@@ -53,6 +60,7 @@ def register_with_password(
     payload: PasswordRegisterRequest,
     request: Request,
     response: Response,
+    _: None = Depends(password_register_rate_limit),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
     token_service: AuthTokenService = Depends(get_token_service),
@@ -80,6 +88,7 @@ def register_with_password(
 @router.post('/password/forgot', response_model=PasswordForgotResponse)
 def forgot_password(
     payload: PasswordForgotRequest,
+    _: None = Depends(password_forgot_rate_limit),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
 ) -> PasswordForgotResponse:
@@ -109,6 +118,7 @@ def forgot_password(
 @router.post('/password/reset', response_model=PasswordResetResponse)
 def reset_password(
     payload: PasswordResetRequest,
+    _: None = Depends(password_reset_rate_limit),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
 ) -> PasswordResetResponse:

@@ -4,11 +4,15 @@ import psycopg
 
 from backend.app.db import db_connection
 from backend.app.modules.auth.cookies import set_refresh_cookie
+from backend.app.security.rate_limit import rate_limit_dependency
 from backend.app.settings import Settings, get_settings
 from .schemas import TelegramAuthPayload, TelegramLoginResponse, TelegramLoginResult
 from .use_cases import LoginOrRegisterViaTelegramUseCase, TelegramLoginConfig
 
 router = APIRouter()
+
+telegram_login_rate_limit = rate_limit_dependency('auth:telegram_login')
+telegram_callback_rate_limit = rate_limit_dependency('auth:telegram_callback')
 
 
 def get_login_use_case(conn: psycopg.Connection, settings: Settings) -> LoginOrRegisterViaTelegramUseCase:
@@ -26,6 +30,7 @@ def telegram_login(
     payload: TelegramAuthPayload,
     request: Request,
     response: Response,
+    _: None = Depends(telegram_login_rate_limit),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
 ) -> TelegramLoginResponse:
@@ -50,6 +55,7 @@ def telegram_login(
 @router.get('/telegram/callback')
 def telegram_login_redirect(
     request: Request,
+    _: None = Depends(telegram_callback_rate_limit),
     payload: TelegramAuthPayload = Depends(),
     conn: psycopg.Connection = Depends(db_connection),
     settings: Settings = Depends(get_settings),
