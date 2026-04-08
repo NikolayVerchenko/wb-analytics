@@ -46,25 +46,24 @@ def build_rows(
     date_from: date,
     date_to: date,
 ) -> list[tuple]:
-    rows: list[tuple] = []
+    rows_by_key: dict[tuple[int, int], tuple] = {}
     for item in payload:
         advert_id = item.get("advertId")
         upd_num = item.get("updNum")
         if advert_id is None or upd_num is None:
             continue
-        rows.append(
-            (
-                account_id,
-                int(advert_id),
-                int(upd_num),
-                parse_upd_time(item.get("updTime")),
-                decimal_or_none(item.get("updSum")),
-                date_from,
-                date_to,
-                load_id,
-            )
+        key = (int(advert_id), int(upd_num))
+        rows_by_key[key] = (
+            account_id,
+            key[0],
+            key[1],
+            parse_upd_time(item.get("updTime")),
+            decimal_or_none(item.get("updSum")),
+            date_from,
+            date_to,
+            load_id,
         )
-    return rows
+    return list(rows_by_key.values())
 
 
 def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
@@ -85,6 +84,14 @@ def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
                 loaded_at
             )
             values (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            on conflict (account_id, advert_id, upd_num)
+            do update set
+                upd_time = excluded.upd_time,
+                upd_sum = excluded.upd_sum,
+                period_from = excluded.period_from,
+                period_to = excluded.period_to,
+                raw_load_id = excluded.raw_load_id,
+                loaded_at = now()
             """,
             rows,
         )
