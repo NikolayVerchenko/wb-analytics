@@ -35,7 +35,11 @@ services:
     command: ["python", "scripts/run_prod_api.py"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health')\""]
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os, urllib.request; host=(os.getenv('APP_ALLOWED_HOSTS','').split(',')[0].strip() or '127.0.0.1'); req=urllib.request.Request('http://127.0.0.1:8010/health', headers={'Host': host}); urllib.request.urlopen(req)\""
+        ]
       interval: 15s
       timeout: 5s
       retries: 10
