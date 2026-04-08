@@ -27,6 +27,14 @@ def _split_csv(raw: str | None) -> list[str]:
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
+def _get_optional_env(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str = os.getenv('APP_ENV', 'development')
@@ -51,8 +59,8 @@ class Settings:
     pgpool_timeout_seconds: int = int(os.getenv('PGPOOL_TIMEOUT_SECONDS', '10'))
     sync_worker_poll_seconds: int = int(os.getenv('SYNC_WORKER_POLL_SECONDS', '5'))
     sync_worker_max_steps_per_tick: int = int(os.getenv('SYNC_WORKER_MAX_STEPS_PER_TICK', '1'))
-    sync_worker_mode: str | None = os.getenv('SYNC_WORKER_MODE')
-    sync_worker_dataset: str | None = os.getenv('SYNC_WORKER_DATASET')
+    sync_worker_mode: str | None = _get_optional_env('SYNC_WORKER_MODE')
+    sync_worker_dataset: str | None = _get_optional_env('SYNC_WORKER_DATASET')
     app_allowed_hosts_raw: str = os.getenv('APP_ALLOWED_HOSTS', '')
     port: int = int(os.getenv('PORT', '8010'))
 
