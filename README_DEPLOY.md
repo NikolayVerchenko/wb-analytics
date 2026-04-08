@@ -424,3 +424,44 @@ location / {
 - prerequisite `core.accounts` должен существовать заранее
 - текущий nginx config слушает только `80/tcp`
 - TLS/HTTPS в этот deploy-kit не входит и должен добавляться отдельно
+
+## 14. Stage 2 Scaling
+
+Текущий production-контур поддерживает Stage 2 scaling path без смены архитектуры.
+
+### Что добавлено
+- `WEB_CONCURRENCY` — количество uvicorn workers для web API
+- `PGPOOL_MIN_SIZE` / `PGPOOL_MAX_SIZE` / `PGPOOL_TIMEOUT_SECONDS` — pool соединений к PostgreSQL для web API
+- `sync-worker` — отдельный контейнер, который обрабатывает pending sync jobs вне web-процесса
+- `SYNC_WORKER_POLL_SECONDS` — интервал опроса pending jobs
+- `SYNC_WORKER_MAX_STEPS_PER_TICK` — сколько sync steps worker выполняет за один проход
+
+### Что нужно задать в `.env.courier.prod`
+```env
+WEB_CONCURRENCY=2
+PGPOOL_MIN_SIZE=2
+PGPOOL_MAX_SIZE=10
+PGPOOL_TIMEOUT_SECONDS=10
+SYNC_WORKER_POLL_SECONDS=5
+SYNC_WORKER_MAX_STEPS_PER_TICK=1
+SYNC_WORKER_MODE=
+SYNC_WORKER_DATASET=
+```
+
+### Как запустить Stage 2
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
+```
+
+Поднимутся сервисы:
+- `postgres`
+- `frontend-build`
+- `backend`
+- `sync-worker`
+- `nginx`
+
+### Что изменилось в runtime
+- sync больше не стартует через FastAPI `BackgroundTasks`
+- web API только создаёт job и читает статусы
+- отдельный `sync-worker` сам подбирает pending jobs из БД
+- web API использует pool соединений и несколько workers

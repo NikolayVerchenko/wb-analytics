@@ -100,13 +100,36 @@ class SyncExecutor:
 
         return processed
 
+    def execute_pending_steps(
+        self,
+        *,
+        mode: str | None = None,
+        dataset: str | None = None,
+        max_steps: int | None = None,
+    ) -> int:
+        processed = 0
+
+        while True:
+            if max_steps is not None and processed >= max_steps:
+                break
+
+            executed_dataset = self.execute_next_pending_step(mode=mode, dataset=dataset)
+            if not executed_dataset:
+                break
+
+            processed += 1
+            throttle_seconds = self._get_step_throttle_seconds(executed_dataset)
+            if throttle_seconds > 0 and (max_steps is None or processed < max_steps):
+                time.sleep(throttle_seconds)
+
+        return processed
     def execute_next_pending_step(
         self,
         *,
         mode: str | None = None,
         dataset: str | None = None,
         job_id: UUID | None = None,
-    ) -> bool:
+    ) -> str | None:
         with get_db_connection() as conn:
             repository = SyncRepository(conn)
             step = repository.get_next_pending_step(mode=mode, dataset=dataset, job_id=job_id)
@@ -115,6 +138,7 @@ class SyncExecutor:
 
             step_id = UUID(str(step['step_id']))
             current_job_id = UUID(str(step['job_id']))
+            current_dataset = str(step['dataset'])
             repository.mark_job_running(current_job_id)
             repository.mark_step_running(step_id)
             conn.commit()
@@ -127,7 +151,7 @@ class SyncExecutor:
             with get_db_connection() as conn:
                 repository = SyncRepository(conn)
                 if repository.is_job_cancelled(current_job_id):
-                    return dataset
+                    return current_dataset
                 self._refresh_raw_resume_state(step_id=step_id)
                 if retry_decision.should_retry and retry_decision.next_retry_at is not None:
                     repository.mark_step_for_retry(
@@ -152,7 +176,7 @@ class SyncExecutor:
                 conn.commit()
             print(f'step_id={step_id} status=success')
 
-        return dataset
+        return current_dataset
 
     def _get_step_throttle_seconds(self, dataset: str | None) -> int:
         if dataset == 'sales_funnel':
@@ -806,7 +830,7 @@ class SyncExecutor:
                 str(REFRESH_STOCK_MARTS),
             ], job_id=job_id)
 
-    def _is_job_cancelled(self, job_id: UUID) -> bool:
+    def _is_job_cancelled(self, job_id: UUID) -> str | None:
         with get_db_connection() as conn:
             repository = SyncRepository(conn)
             return repository.is_job_cancelled(job_id)
@@ -858,3 +882,5 @@ class SyncExecutor:
             row_repository.update_step_payload(step_id, {'raw_resume': state})
             conn.commit()
             return state
+
+

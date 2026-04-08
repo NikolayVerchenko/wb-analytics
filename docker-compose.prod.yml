@@ -44,6 +44,18 @@ services:
       timeout: 5s
       retries: 10
 
+  sync-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.courier.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "scripts/run_sync_worker.py"]
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27-alpine
     depends_on:

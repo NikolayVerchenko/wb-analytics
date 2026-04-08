@@ -45,6 +45,14 @@ class Settings:
     )
     auth_rate_limit_max_requests: int = int(os.getenv('AUTH_RATE_LIMIT_MAX_REQUESTS', '10'))
     auth_rate_limit_window_seconds: int = int(os.getenv('AUTH_RATE_LIMIT_WINDOW_SECONDS', '60'))
+    web_concurrency: int = int(os.getenv('WEB_CONCURRENCY', '2'))
+    pgpool_min_size: int = int(os.getenv('PGPOOL_MIN_SIZE', '2'))
+    pgpool_max_size: int = int(os.getenv('PGPOOL_MAX_SIZE', '10'))
+    pgpool_timeout_seconds: int = int(os.getenv('PGPOOL_TIMEOUT_SECONDS', '10'))
+    sync_worker_poll_seconds: int = int(os.getenv('SYNC_WORKER_POLL_SECONDS', '5'))
+    sync_worker_max_steps_per_tick: int = int(os.getenv('SYNC_WORKER_MAX_STEPS_PER_TICK', '1'))
+    sync_worker_mode: str | None = os.getenv('SYNC_WORKER_MODE')
+    sync_worker_dataset: str | None = os.getenv('SYNC_WORKER_DATASET')
     app_allowed_hosts_raw: str = os.getenv('APP_ALLOWED_HOSTS', '')
     port: int = int(os.getenv('PORT', '8010'))
 
@@ -108,6 +116,24 @@ class Settings:
 
         if self.auth_rate_limit_window_seconds <= 0:
             unsafe.append('AUTH_RATE_LIMIT_WINDOW_SECONDS must be > 0 in production')
+
+        if self.web_concurrency <= 0:
+            unsafe.append('WEB_CONCURRENCY must be > 0 in production')
+
+        if self.pgpool_min_size <= 0:
+            unsafe.append('PGPOOL_MIN_SIZE must be > 0 in production')
+
+        if self.pgpool_max_size < self.pgpool_min_size:
+            unsafe.append('PGPOOL_MAX_SIZE must be >= PGPOOL_MIN_SIZE in production')
+
+        if self.pgpool_timeout_seconds <= 0:
+            unsafe.append('PGPOOL_TIMEOUT_SECONDS must be > 0 in production')
+
+        if self.sync_worker_poll_seconds <= 0:
+            unsafe.append('SYNC_WORKER_POLL_SECONDS must be > 0 in production')
+
+        if self.sync_worker_max_steps_per_tick <= 0:
+            unsafe.append('SYNC_WORKER_MAX_STEPS_PER_TICK must be > 0 in production')
 
         if any(host in {'localhost', '127.0.0.1'} for host in self.allowed_hosts):
             unsafe.append('APP_ALLOWED_HOSTS still contains localhost/127.0.0.1')

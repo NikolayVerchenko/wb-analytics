@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from backend.app.db import close_db_pool, init_db_pool
 from backend.app.modules.accounts.router import router as accounts_router
 from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.economics.router import router as economics_router
@@ -15,6 +16,16 @@ settings = get_settings()
 
 app = FastAPI(title='WB Analytics API', version='0.1.0')
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+
+
+@app.on_event('startup')
+def startup() -> None:
+    init_db_pool()
+
+
+@app.on_event('shutdown')
+def shutdown() -> None:
+    close_db_pool()
 
 
 @app.get('/health')

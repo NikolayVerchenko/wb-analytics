@@ -1,5 +1,6 @@
 requests
 psycopg[binary]
+psycopg_pool
 python-dotenv
 fastapi
 uvicorn

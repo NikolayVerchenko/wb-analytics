@@ -5,8 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import uvicorn
-
+from backend.app.modules.sync.worker import SyncWorker
 from backend.app.settings import get_settings
 
 
@@ -15,14 +14,13 @@ def main() -> None:
     if settings.is_production:
         settings.validate_for_production()
 
-    uvicorn.run(
-        'backend.app.main:app',
-        host='0.0.0.0',
-        port=settings.port,
-        workers=settings.web_concurrency,
-        proxy_headers=True,
-        forwarded_allow_ips='*',
+    worker = SyncWorker(
+        poll_seconds=settings.sync_worker_poll_seconds,
+        max_steps_per_tick=settings.sync_worker_max_steps_per_tick,
+        mode=settings.sync_worker_mode,
+        dataset=settings.sync_worker_dataset,
     )
+    worker.run_forever()
 
 
 if __name__ == '__main__':
