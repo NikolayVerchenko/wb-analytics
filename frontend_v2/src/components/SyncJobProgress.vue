@@ -63,6 +63,48 @@
       </div>
     </div>
 
+    <div v-if="datasetProgress.length" class="sync-dataset-section stack">
+      <div>
+        <h4 class="section-title sync-subtitle">Что загружено по периодам</h4>
+        <p class="sync-helper-text">Показываем, какие наборы данных в этой job уже загрузились, ещё обрабатываются или завершились с ошибкой.</p>
+      </div>
+
+      <div class="sync-dataset-grid">
+        <article v-for="item in datasetProgress" :key="item.dataset" class="sync-dataset-card">
+          <div class="sync-dataset-header">
+            <strong>{{ item.label }}</strong>
+          </div>
+
+          <div v-if="item.successPeriods.length" class="sync-dataset-block">
+            <span class="sync-dataset-label">Загружено</span>
+            <div class="sync-dataset-periods">
+              <span v-for="period in item.successPeriods" :key="`success:${item.dataset}:${period}`" class="sync-dataset-chip sync-dataset-chip-success">
+                {{ period }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="item.pendingPeriods.length" class="sync-dataset-block">
+            <span class="sync-dataset-label">В работе</span>
+            <div class="sync-dataset-periods">
+              <span v-for="period in item.pendingPeriods" :key="`pending:${item.dataset}:${period}`" class="sync-dataset-chip sync-dataset-chip-pending">
+                {{ period }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="item.failedPeriods.length" class="sync-dataset-block">
+            <span class="sync-dataset-label">С ошибкой</span>
+            <div class="sync-dataset-periods">
+              <span v-for="period in item.failedPeriods" :key="`failed:${item.dataset}:${period}`" class="sync-dataset-chip sync-dataset-chip-failed">
+                {{ period }}
+              </span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
     <div class="sync-steps-list">
       <article v-for="week in weeklyProgress" :key="`${week.periodFrom}:${week.periodTo}`" class="sync-step-card">
         <div class="sync-step-main">
@@ -125,6 +167,7 @@ const {
   completedSteps,
   progressPercent,
   weeklyProgress,
+  datasetProgress,
   jobStatusLabel,
   rateLimitStats,
 } = useSyncJobProgress(toRef(props, 'jobDetails'))

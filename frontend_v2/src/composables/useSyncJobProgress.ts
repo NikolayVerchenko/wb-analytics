@@ -1,5 +1,5 @@
 import { computed, unref, type MaybeRef } from 'vue'
-import type { SyncJobDetailsResponse, SyncJobStatus, SyncJobStep, SyncJobStepStatus } from '../types/sync'
+import type { SyncDataset, SyncJobDetailsResponse, SyncJobStatus, SyncJobStep, SyncJobStepStatus } from '../types/sync'
 
 export type SyncStatusCount = {
   pending: number
@@ -30,6 +30,14 @@ export type SyncWeekProgressItem = {
   phaseDetailMessage: string | null
   phaseElapsedMessage: string | null
   apiHintMessage: string | null
+}
+
+export type SyncDatasetProgressItem = {
+  dataset: SyncDataset
+  label: string
+  successPeriods: string[]
+  pendingPeriods: string[]
+  failedPeriods: string[]
 }
 
 export function useSyncJobProgress(jobDetails: MaybeRef<SyncJobDetailsResponse | null>) {
@@ -126,6 +134,35 @@ export function useSyncJobProgress(jobDetails: MaybeRef<SyncJobDetailsResponse |
   })
 
   const jobStatusLabel = computed(() => formatJobStatus(unref(jobDetails)?.job.status ?? 'pending'))
+  const datasetProgress = computed<SyncDatasetProgressItem[]>(() => {
+    const grouped = new Map<SyncDataset, SyncDatasetProgressItem>()
+
+    for (const step of steps.value) {
+      if (!grouped.has(step.dataset)) {
+        grouped.set(step.dataset, {
+          dataset: step.dataset,
+          label: formatDatasetLabel(step.dataset),
+          successPeriods: [],
+          pendingPeriods: [],
+          failedPeriods: [],
+        })
+      }
+
+      const item = grouped.get(step.dataset)!
+      const period = formatPeriod(step.period_from, step.period_to)
+      if (step.status === 'success' && !item.successPeriods.includes(period)) {
+        item.successPeriods.push(period)
+      }
+      if ((step.status === 'pending' || step.status === 'running') && !item.pendingPeriods.includes(period)) {
+        item.pendingPeriods.push(period)
+      }
+      if (step.status === 'failed' && !item.failedPeriods.includes(period)) {
+        item.failedPeriods.push(period)
+      }
+    }
+
+    return Array.from(grouped.values()).sort((left, right) => left.label.localeCompare(right.label, 'ru-RU'))
+  })
   const rateLimitStats = computed<SyncRateLimitStats>(() => {
     let step429Count = 0
     let last429At: string | null = null
@@ -160,6 +197,7 @@ export function useSyncJobProgress(jobDetails: MaybeRef<SyncJobDetailsResponse |
     completedSteps,
     progressPercent,
     weeklyProgress,
+    datasetProgress,
     jobStatusLabel,
     rateLimitStats,
   }
@@ -184,6 +222,25 @@ function formatRetryMessage(nextRetryAt: string): string {
   }
 
   return `Следующая попытка после ${formatDateTime(nextRetryAt)}`
+}
+
+function formatPeriod(periodFrom: string, periodTo: string): string {
+  return periodFrom === periodTo ? periodFrom : `${periodFrom} - ${periodTo}`
+}
+
+function formatDatasetLabel(dataset: SyncDataset): string {
+  const labels: Record<SyncDataset, string> = {
+    sales: 'Продажи',
+    cards: 'Карточки',
+    adverts_snapshot: 'Реклама',
+    adverts_cost: 'Расходы рекламы',
+    acceptance: 'Приёмка',
+    storage: 'Хранение',
+    sales_funnel: 'Воронка',
+    warehouse_remains: 'Остатки',
+  }
+
+  return labels[dataset] ?? dataset
 }
 
 function buildBlockReasonMessage(errorMessage: string): string | null {
