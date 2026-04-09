@@ -783,6 +783,73 @@ td.numeric {
   gap: 12px;
 }
 
+.sync-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sync-tab-button {
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #374151;
+  font-weight: 600;
+}
+
+.sync-tab-button-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.sync-coverage-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sync-coverage-summary-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.sync-coverage-summary-card-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.sync-coverage-summary-title {
+  font-weight: 700;
+  color: #111827;
+}
+
+.sync-coverage-summary-meta {
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.sync-coverage-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sync-coverage-overview-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
 .sync-coverage-card {
   padding: 14px 16px;
   border: 1px solid #e5e7eb;
@@ -802,6 +869,69 @@ td.numeric {
   margin: 0;
   color: #4b5563;
   font-size: 14px;
+}
+
+.sync-coverage-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.sync-coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.sync-coverage-table th,
+.sync-coverage-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.sync-coverage-table th {
+  font-size: 13px;
+  color: #4b5563;
+  background: #f9fafb;
+}
+
+.sync-inline-details summary {
+  cursor: pointer;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.sync-inline-details-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sync-job-details-panel {
+  padding: 0;
+}
+
+.sync-job-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.sync-job-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sync-job-details-body {
+  padding: 0 20px 20px;
 }
 
 .sync-dataset-card {

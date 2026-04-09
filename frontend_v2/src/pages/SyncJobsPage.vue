@@ -152,11 +152,20 @@
     <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
     <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
 
-    <SyncJobProgress
-      v-if="jobDetails"
-      :job-details="jobDetails"
-      :current-account-title="currentAccountTitle"
-    />
+    <details v-if="jobDetails" class="card sync-job-details-panel" :open="jobDetails.job.status === 'pending' || jobDetails.job.status === 'running'">
+      <summary class="sync-job-details-summary">
+        <span>Текущая загрузка</span>
+        <span class="sync-status-pill sync-status-pill-small" :data-status="jobDetails.job.status">
+          {{ jobStatusLabel }}
+        </span>
+      </summary>
+      <div class="sync-job-details-body">
+        <SyncJobProgress
+          :job-details="jobDetails"
+          :current-account-title="currentAccountTitle"
+        />
+      </div>
+    </details>
   </section>
 </template>
 
@@ -166,6 +175,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getAccounts } from '../api/accounts'
 import SyncCoverageOverview from '../components/SyncCoverageOverview.vue'
 import SyncJobProgress from '../components/SyncJobProgress.vue'
+import type { SyncJobStatus } from '../types/sync'
 import { useSyncJob } from '../composables/useSyncJob'
 import type { Account } from '../types/account'
 
@@ -222,6 +232,7 @@ const currentAccountTitle = computed(() => {
   const account = accounts.value.find((item) => item.account_id === form.accountId)
   return account ? getAccountTitle(account) : 'Не выбран'
 })
+const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
 const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
 
 function formatDate(value: Date): string {
@@ -250,6 +261,18 @@ function getTodayDate(): string {
 
 function getAccountTitle(account: Account): string {
   return account.seller_name || account.name || 'Без названия'
+}
+
+function formatJobStatus(status: SyncJobStatus): string {
+  const labels: Record<SyncJobStatus, string> = {
+    pending: 'Ожидает',
+    running: 'В работе',
+    success: 'Успешно',
+    partial_success: 'Частично',
+    failed: 'Ошибка',
+    cancelled: 'Остановлено',
+  }
+  return labels[status]
 }
 
 function saveSyncPageState() {
