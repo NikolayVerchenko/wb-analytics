@@ -17,6 +17,19 @@ export function apiUrl(path: string): string {
 
 async function buildErrorMessage(response: Response): Promise<string> {
   const text = await response.text()
+  const contentType = response.headers.get('content-type') || ''
+  const looksLikeHtml = contentType.includes('text/html') || /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text)
+
+  if (looksLikeHtml) {
+    if (response.status === 504) {
+      return 'Сервер не ответил вовремя. Если вы запускали загрузку, обновите статус через несколько секунд: job могла уже создаться.'
+    }
+    if (response.status === 502 || response.status === 503) {
+      return 'Сервер временно недоступен. Повторите действие через несколько секунд.'
+    }
+    return `Request failed with status ${response.status}`
+  }
+
   if (!text) {
     return `Request failed with status ${response.status}`
   }
