@@ -144,6 +144,11 @@
       </details>
     </div>
 
+    <div v-if="coverageLoading" class="message message-info">Обновляю доступность данных по кабинету...</div>
+    <div v-else-if="coverageError" class="message message-error">{{ coverageError }}</div>
+
+    <SyncCoverageOverview v-if="coverage" :coverage="coverage" />
+
     <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
     <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
 
@@ -159,6 +164,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getAccounts } from '../api/accounts'
+import SyncCoverageOverview from '../components/SyncCoverageOverview.vue'
 import SyncJobProgress from '../components/SyncJobProgress.vue'
 import { useSyncJob } from '../composables/useSyncJob'
 import type { Account } from '../types/account'
@@ -170,12 +176,15 @@ const SYNC_PAGE_STATE_KEY = 'sync-page-state'
 
 const {
   jobDetails,
+  coverage,
   createLoading,
   createError,
   createSuccessMessage,
   conflictJobId,
   detailsLoading,
   detailsError,
+  coverageLoading,
+  coverageError,
   retryFailedLoading,
   retryFailedError,
   cancelLoading,
@@ -185,6 +194,7 @@ const {
   createJob,
   continueJob,
   loadJobDetails,
+  loadCoverage,
   retryFailedJob,
   cancelJob,
   restartJob,
@@ -588,10 +598,26 @@ async function handleRestartJob(targetJobId: string) {
 
 watch(
   () => route.query.account_id,
-  (value) => {
+  async (value) => {
     if (typeof value === 'string') {
       form.accountId = value
+      await loadCoverage(value)
     }
+  },
+)
+
+watch(
+  () => form.accountId,
+  async (value, previousValue) => {
+    if (!value) {
+      return
+    }
+
+    if (value === previousValue && coverage.value) {
+      return
+    }
+
+    await loadCoverage(value)
   },
 )
 
@@ -600,6 +626,9 @@ watch(
   async (value) => {
     if (typeof value === 'string' && value) {
       await loadCurrentJob(value)
+      if (form.accountId) {
+        await loadCoverage(form.accountId, false)
+      }
       startPolling(value)
       return
     }
@@ -622,5 +651,8 @@ watch(
 onMounted(async () => {
   await loadAccountsList()
   await restoreSyncPageState()
+  if (form.accountId) {
+    await loadCoverage(form.accountId)
+  }
 })
 </script>

@@ -1,15 +1,18 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { cancelSyncJob, continueSyncJob, createSyncJob, getSyncJob, restartSyncJob, resumeReadySyncJob, retryFailedSyncJob, runSyncJob } from '../api/sync'
-import type { SyncJobCreate, SyncJobDetailsResponse } from '../types/sync'
+import { cancelSyncJob, continueSyncJob, createSyncJob, getSyncCoverage, getSyncJob, restartSyncJob, resumeReadySyncJob, retryFailedSyncJob, runSyncJob } from '../api/sync'
+import type { SyncCoverageResponse, SyncJobCreate, SyncJobDetailsResponse } from '../types/sync'
 
 export function useSyncJob() {
   const jobDetails = ref<SyncJobDetailsResponse | null>(null)
+  const coverage = ref<SyncCoverageResponse | null>(null)
   const createLoading = ref(false)
   const createError = ref('')
   const createSuccessMessage = ref('')
   const conflictJobId = ref('')
   const detailsLoading = ref(false)
   const detailsError = ref('')
+  const coverageLoading = ref(false)
+  const coverageError = ref('')
   const runLoading = ref(false)
   const runError = ref('')
   const retryFailedLoading = ref(false)
@@ -105,6 +108,32 @@ export function useSyncJob() {
     } finally {
       if (showLoading) {
         detailsLoading.value = false
+      }
+    }
+  }
+
+  async function loadCoverage(accountId: string, showLoading = true) {
+    if (!accountId) {
+      coverage.value = null
+      coverageError.value = ''
+      return null
+    }
+
+    if (showLoading) {
+      coverageLoading.value = true
+    }
+    coverageError.value = ''
+
+    try {
+      const response = await getSyncCoverage(accountId)
+      coverage.value = response
+      return response
+    } catch (error) {
+      coverageError.value = error instanceof Error ? error.message : 'Не удалось загрузить покрытие данных.'
+      return null
+    } finally {
+      if (showLoading) {
+        coverageLoading.value = false
       }
     }
   }
@@ -258,12 +287,15 @@ export function useSyncJob() {
 
   return {
     jobDetails,
+    coverage,
     createLoading,
     createError,
     createSuccessMessage,
     conflictJobId,
     detailsLoading,
     detailsError,
+    coverageLoading,
+    coverageError,
     runLoading,
     runError,
     retryFailedLoading,
@@ -275,6 +307,7 @@ export function useSyncJob() {
     createJob,
     continueJob,
     loadJobDetails,
+    loadCoverage,
     runJob,
     retryFailedJob,
     cancelJob,

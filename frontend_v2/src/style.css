@@ -663,6 +663,36 @@ td.numeric {
   color: #374151;
 }
 
+.sync-status-pill[data-status='actual'] {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sync-status-pill[data-status='loading'] {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.sync-status-pill[data-status='partial'] {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.sync-status-pill[data-status='stale'] {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.sync-status-pill[data-status='error'] {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.sync-status-pill[data-status='empty'] {
+  background: #f9fafb;
+  color: #6b7280;
+}
+
 .sync-status-pill[data-status='running'] {
   background: #eff6ff;
   color: #1d4ed8;
@@ -745,6 +775,33 @@ td.numeric {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
+}
+
+.sync-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.sync-coverage-card {
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  display: grid;
+  gap: 12px;
+}
+
+.sync-coverage-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.sync-coverage-comment {
+  margin: 0;
+  color: #4b5563;
+  font-size: 14px;
 }
 
 .sync-dataset-card {

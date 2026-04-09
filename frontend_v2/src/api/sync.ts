@@ -1,5 +1,9 @@
 import { apiGet, apiPost } from './http'
-import type { SyncJobCreate, SyncJobCreateResponse, SyncJobDetailsResponse, SyncJobRunRequest } from '../types/sync'
+import type { SyncCoverageResponse, SyncJobCreate, SyncJobCreateResponse, SyncJobDetailsResponse, SyncJobRunRequest } from '../types/sync'
+
+export function getSyncCoverage(accountId: string): Promise<SyncCoverageResponse> {
+  return apiGet<SyncCoverageResponse>(`/api/sync/coverage?account_id=${encodeURIComponent(accountId)}`)
+}
 
 export function createSyncJob(payload: SyncJobCreate): Promise<SyncJobCreateResponse> {
   return apiPost<SyncJobCreateResponse, SyncJobCreate>('/api/sync/jobs', payload)
