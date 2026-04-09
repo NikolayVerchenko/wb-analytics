@@ -202,7 +202,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type {
   SyncCoverageDataset,
   SyncCoverageResponse,
@@ -210,13 +210,21 @@ import type {
   SyncCoverageSectionStatus,
 } from '../types/sync'
 
+export type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference'
+
 const props = defineProps<{
   coverage: SyncCoverageResponse | null
+  activeTab?: CoverageTab
 }>()
 
-type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference'
+const emit = defineEmits<{
+  (e: 'update:activeTab', value: CoverageTab): void
+}>()
 
-const activeTab = ref<CoverageTab>('overview')
+const activeTab = computed<CoverageTab>({
+  get: () => props.activeTab ?? 'overview',
+  set: (value) => emit('update:activeTab', value),
+})
 
 const overallStatus = computed<SyncCoverageSectionStatus>(() => {
   const statuses = [

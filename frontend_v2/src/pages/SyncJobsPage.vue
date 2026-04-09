@@ -4,8 +4,7 @@
       <div>
         <h2 class="page-title">Загрузка данных</h2>
         <p class="page-description">
-          Запускайте одно основное обновление по кабинету и периоду. Продажи, карточки, реклама, приёмка
-          и хранение подтягиваются автоматически внутри одной job.
+          {{ actionDescription }}
         </p>
       </div>
 
@@ -20,12 +19,12 @@
           </select>
         </div>
 
-        <div class="field">
+        <div v-if="showDateRangeFields" class="field">
           <label for="sync-date-from">Дата от</label>
           <input id="sync-date-from" v-model="form.dateFrom" type="date" />
         </div>
 
-        <div class="field">
+        <div v-if="showDateRangeFields" class="field">
           <label for="sync-date-to">Дата до</label>
           <input id="sync-date-to" v-model="form.dateTo" type="date" />
         </div>
@@ -35,10 +34,10 @@
         <button
           type="button"
           class="primary-button"
-          :disabled="createLoading || !canSubmit"
-          @click="handleCreateJob"
+          :disabled="primaryActionDisabled"
+          @click="handlePrimaryAction"
         >
-          {{ createLoading ? 'Запускаю обновление...' : 'Обновить данные' }}
+          {{ createLoading ? primaryActionLoadingLabel : primaryActionLabel }}
         </button>
 
         <button
@@ -60,11 +59,11 @@
         >
           {{ retryFailedLoading ? 'Повторяю...' : 'Повторить проблемные шаги' }}
         </button>
+
       </div>
 
       <p class="sync-helper-text">
-        Для первичной загрузки выбирайте полный период. Если часть шагов упёрлась во временные ошибки WB,
-        система продолжит их автоматически или через кнопку повторного запуска ошибок.
+        {{ actionHelperText }}
       </p>
 
       <div v-if="createError" class="message message-error">{{ createError }}</div>
@@ -147,7 +146,11 @@
     <div v-if="coverageLoading" class="message message-info">Обновляю доступность данных по кабинету...</div>
     <div v-else-if="coverageError" class="message message-error">{{ coverageError }}</div>
 
-    <SyncCoverageOverview v-if="coverage" :coverage="coverage" />
+    <SyncCoverageOverview
+      v-if="coverage"
+      v-model:active-tab="selectedCoverageTab"
+      :coverage="coverage"
+    />
 
     <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
     <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
@@ -183,6 +186,7 @@ const route = useRoute()
 const router = useRouter()
 const accounts = ref<Account[]>([])
 const SYNC_PAGE_STATE_KEY = 'sync-page-state'
+type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference'
 
 const {
   jobDetails,
@@ -217,6 +221,7 @@ const form = reactive({
   dateFrom: getDefaultDateFrom(),
   dateTo: getDefaultDateTo(),
 })
+const selectedCoverageTab = ref<CoverageTab>('overview')
 
 const jobId = computed(() => (typeof route.query.job_id === 'string' ? route.query.job_id : ''))
 const hasFailedSteps = computed(() => jobDetails.value?.steps.some((step) => step.status === 'failed') ?? false)
@@ -234,6 +239,61 @@ const currentAccountTitle = computed(() => {
 })
 const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
 const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
+const showDateRangeFields = computed(() => selectedCoverageTab.value === 'overview' || selectedCoverageTab.value === 'historical')
+const primaryActionLabel = computed(() => {
+  if (selectedCoverageTab.value === 'historical') {
+    return 'Догрузить историю'
+  }
+  if (selectedCoverageTab.value === 'operational') {
+    return 'Обновить текущую неделю'
+  }
+  if (selectedCoverageTab.value === 'reference') {
+    return 'Обновить остатки'
+  }
+  return 'Обновить данные'
+})
+const primaryActionLoadingLabel = computed(() => {
+  if (selectedCoverageTab.value === 'operational') {
+    return 'Запускаю обновление недели...'
+  }
+  if (selectedCoverageTab.value === 'reference') {
+    return 'Обновляю остатки...'
+  }
+  return 'Запускаю обновление...'
+})
+const primaryActionDisabled = computed(() => {
+  if (createLoading.value) {
+    return true
+  }
+  if (selectedCoverageTab.value === 'operational' || selectedCoverageTab.value === 'reference') {
+    return !form.accountId
+  }
+  return !canSubmit.value
+})
+const actionDescription = computed(() => {
+  if (selectedCoverageTab.value === 'historical') {
+    return 'Выберите период и запустите догрузку закрытых недель. Продажи, карточки, реклама, приёмка и хранение подтянутся внутри одной job.'
+  }
+  if (selectedCoverageTab.value === 'operational') {
+    return 'Запустите обновление незакрытой недели, чтобы подтянуть текущие продажи, воронку и связанные оперативные данные.'
+  }
+  if (selectedCoverageTab.value === 'reference') {
+    return 'Обновляйте остатки отдельно. Карточки подтягиваются вместе с историей или оперативным обновлением.'
+  }
+  return 'Сначала выберите кабинет и тип данных ниже. Для истории задайте период, для оперативных и справочных данных достаточно кабинета.'
+})
+const actionHelperText = computed(() => {
+  if (selectedCoverageTab.value === 'historical') {
+    return 'Для первичной загрузки выбирайте полный период. Если часть шагов упёрлась во временные ошибки WB, система продолжит их автоматически или через кнопку повторного запуска ошибок.'
+  }
+  if (selectedCoverageTab.value === 'operational') {
+    return 'Этот запуск обновляет только текущую незакрытую неделю. Финальные цифры сформируются после закрытия недели.'
+  }
+  if (selectedCoverageTab.value === 'reference') {
+    return 'Остатки можно обновлять отдельно. Карточки подтягиваются вместе с историческими и оперативными загрузками, поставки живут в отдельном разделе.'
+  }
+  return 'На вкладке История задавайте период. На вкладках Оперативные и Справочники достаточно выбрать кабинет.'
+})
 
 function formatDate(value: Date): string {
   return value.toISOString().slice(0, 10)
@@ -401,6 +461,18 @@ async function handleCreateJob() {
       job_id: response.job_id,
     },
   })
+}
+
+async function handlePrimaryAction() {
+  if (selectedCoverageTab.value === 'operational') {
+    await handleCreateOpenWeekJob()
+    return
+  }
+  if (selectedCoverageTab.value === 'reference') {
+    await handleCreateStockSnapshotJob()
+    return
+  }
+  await handleCreateJob()
 }
 
 async function handleContinueSalesJob() {
