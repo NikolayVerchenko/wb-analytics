@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -8,7 +8,13 @@ from courier.common import get_week_start
 from backend.app.modules.sync.executor import SyncExecutor
 from backend.app.modules.sync.repository import SyncRepository
 from backend.app.modules.sync.schemas import (
+    DateRangeRead,
     SyncDataset,
+    SyncCoverageActiveJobRead,
+    SyncCoverageDatasetRead,
+    SyncCoverageResponse,
+    SyncCoverageSectionRead,
+    SyncCoverageSectionStatus,
     SyncJobCreate,
     SyncJobCreateResponse,
     SyncJobDetailsResponse,
@@ -22,6 +28,23 @@ from backend.app.modules.sync.schemas import (
 
 
 class SyncService:
+    _HISTORICAL_DATASETS: tuple[tuple[SyncDataset, str], ...] = (
+        (SyncDataset.SALES, 'Продажи'),
+        (SyncDataset.ADVERTS_SNAPSHOT, 'Реклама'),
+        (SyncDataset.ADVERTS_COST, 'Расходы рекламы'),
+        (SyncDataset.ACCEPTANCE, 'Приёмка'),
+        (SyncDataset.STORAGE, 'Хранение'),
+    )
+    _OPERATIONAL_DATASETS: tuple[tuple[str, str, SyncDataset, SyncMode, SyncJobType], ...] = (
+        ('open_week', 'Незакрытая неделя', SyncDataset.SALES, SyncMode.DAILY, SyncJobType.OPEN_WEEK_REFRESH),
+        ('orders', 'Воронка / заказы', SyncDataset.SALES_FUNNEL, SyncMode.DAILY, SyncJobType.OPEN_WEEK_REFRESH),
+    )
+    _REFERENCE_DATASETS: tuple[tuple[str, str], ...] = (
+        ('cards', 'Карточки'),
+        ('stocks', 'Остатки'),
+        ('supplies', 'Поставки'),
+    )
+
     def __init__(self, conn: psycopg.Connection) -> None:
         self._conn = conn
         self._repository = SyncRepository(conn)
@@ -357,6 +380,25 @@ class SyncService:
             steps=[SyncJobStepRead.model_validate(row) for row in step_rows],
         )
 
+    def get_account_coverage(self, account_id: UUID, *, user_id: UUID) -> SyncCoverageResponse:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
+        active_jobs = self._repository.list_active_jobs_for_account(account_id)
+        return SyncCoverageResponse(
+            account_id=account_id,
+            historical=self._build_historical_coverage(account_id, active_jobs=active_jobs),
+            operational=self._build_operational_coverage(account_id, active_jobs=active_jobs),
+            reference_data=self._build_reference_coverage(account_id, active_jobs=active_jobs),
+            active_jobs=[
+                SyncCoverageActiveJobRead(
+                    job_id=row['job_id'],
+                    job_type=SyncJobType(row['job_type']),
+                    mode=SyncMode(row['mode']),
+                    status=SyncJobStatus(row['status']),
+                )
+                for row in active_jobs
+            ],
+        )
+
     def _create_job_with_plan(
         self,
         *,
@@ -436,6 +478,204 @@ class SyncService:
 
         self._conn.commit()
         return SyncJobCreateResponse(job_id=job_row['job_id'], status=SyncJobStatus(job_row['status']))
+
+    def _build_historical_coverage(
+        self,
+        account_id: UUID,
+        *,
+        active_jobs: list[dict],
+    ) -> SyncCoverageSectionRead:
+        datasets = [
+            self._build_historical_dataset(
+                account_id,
+                dataset=dataset,
+                label=label,
+                active_jobs=active_jobs,
+            )
+            for dataset, label in self._HISTORICAL_DATASETS
+        ]
+        return SyncCoverageSectionRead(
+            status=self._resolve_section_status(datasets),
+            datasets=datasets,
+        )
+
+    def _build_operational_coverage(
+        self,
+        account_id: UUID,
+        *,
+        active_jobs: list[dict],
+    ) -> SyncCoverageSectionRead:
+        datasets = [
+            self._build_operational_dataset(
+                account_id,
+                dataset_key=dataset_key,
+                label=label,
+                source_dataset=source_dataset,
+                mode=mode,
+                job_type=job_type,
+                active_jobs=active_jobs,
+            )
+            for dataset_key, label, source_dataset, mode, job_type in self._OPERATIONAL_DATASETS
+        ]
+        return SyncCoverageSectionRead(
+            status=self._resolve_section_status(datasets),
+            datasets=datasets,
+        )
+
+    def _build_reference_coverage(
+        self,
+        account_id: UUID,
+        *,
+        active_jobs: list[dict],
+    ) -> SyncCoverageSectionRead:
+        datasets = [
+            self._build_reference_dataset(
+                account_id,
+                dataset_key=dataset_key,
+                label=label,
+                active_jobs=active_jobs,
+            )
+            for dataset_key, label in self._REFERENCE_DATASETS
+        ]
+        return SyncCoverageSectionRead(
+            status=self._resolve_section_status(datasets),
+            datasets=datasets,
+        )
+
+    def _build_historical_dataset(
+        self,
+        account_id: UUID,
+        *,
+        dataset: SyncDataset,
+        label: str,
+        active_jobs: list[dict],
+    ) -> SyncCoverageDatasetRead:
+        periods = self._repository.list_dataset_success_periods(
+            account_id,
+            dataset=dataset.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        bounds = self._repository.get_dataset_coverage_bounds(
+            account_id,
+            dataset=dataset.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        last_problem = self._repository.get_dataset_last_problem(
+            account_id,
+            dataset=dataset.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        is_loading = self._has_active_job(active_jobs, mode=SyncMode.WEEKLY, dataset=dataset)
+        missing_periods = self._compute_missing_week_ranges(periods)
+        status = self._resolve_dataset_status(
+            has_data=bounds is not None,
+            is_loading=is_loading,
+            has_problem=last_problem is not None,
+            has_gaps=bool(missing_periods),
+            is_stale=False,
+        )
+        return SyncCoverageDatasetRead(
+            dataset=dataset.value,
+            label=label,
+            loaded_from=bounds['loaded_from'] if bounds is not None else None,
+            loaded_to=bounds['loaded_to'] if bounds is not None else None,
+            last_success_at=bounds['last_success_at'] if bounds is not None else None,
+            has_gaps=bool(missing_periods),
+            missing_periods=missing_periods,
+            status=status,
+            comment=self._build_problem_comment(last_problem=last_problem, has_gaps=bool(missing_periods)),
+        )
+
+    def _build_operational_dataset(
+        self,
+        account_id: UUID,
+        *,
+        dataset_key: str,
+        label: str,
+        source_dataset: SyncDataset,
+        mode: SyncMode,
+        job_type: SyncJobType,
+        active_jobs: list[dict],
+    ) -> SyncCoverageDatasetRead:
+        freshness = self._repository.get_operational_dataset_freshness(
+            account_id,
+            dataset=source_dataset.value,
+            mode=mode.value,
+            job_type=job_type.value,
+        )
+        last_problem = self._repository.get_dataset_last_problem(
+            account_id,
+            dataset=source_dataset.value,
+            mode=mode.value,
+            job_type=job_type.value,
+        )
+        is_loading = self._has_active_job(active_jobs, mode=mode, dataset=source_dataset, job_type=job_type)
+        actual_to = freshness['actual_to'] if freshness is not None else None
+        status = self._resolve_dataset_status(
+            has_data=freshness is not None,
+            is_loading=is_loading,
+            has_problem=last_problem is not None,
+            has_gaps=False,
+            is_stale=self._is_operational_stale(actual_to),
+        )
+        return SyncCoverageDatasetRead(
+            dataset=dataset_key,
+            label=label,
+            loaded_to=actual_to,
+            actual_at=freshness['last_success_at'] if freshness is not None else None,
+            last_success_at=freshness['last_success_at'] if freshness is not None else None,
+            status=status,
+            comment=self._build_problem_comment(last_problem=last_problem, has_gaps=False),
+        )
+
+    def _build_reference_dataset(
+        self,
+        account_id: UUID,
+        *,
+        dataset_key: str,
+        label: str,
+        active_jobs: list[dict],
+    ) -> SyncCoverageDatasetRead:
+        if dataset_key == 'cards':
+            snapshot = self._repository.get_cards_snapshot(account_id)
+            source_dataset = SyncDataset.CARDS
+            mode = SyncMode.WEEKLY
+        elif dataset_key == 'stocks':
+            snapshot = self._repository.get_stocks_snapshot(account_id)
+            source_dataset = SyncDataset.WAREHOUSE_REMAINS
+            mode = SyncMode.DAILY
+        else:
+            snapshot = self._repository.get_supplies_snapshot(account_id)
+            source_dataset = None
+            mode = None
+
+        last_problem = None
+        is_loading = False
+        if source_dataset is not None and mode is not None:
+            last_problem = self._repository.get_dataset_last_problem(
+                account_id,
+                dataset=source_dataset.value,
+                mode=mode.value,
+            )
+            is_loading = self._has_active_job(active_jobs, mode=mode, dataset=source_dataset)
+
+        actual_at = None if snapshot is None else snapshot.get('actual_at') or snapshot.get('last_success_at')
+        status = self._resolve_dataset_status(
+            has_data=snapshot is not None,
+            is_loading=is_loading,
+            has_problem=last_problem is not None,
+            has_gaps=False,
+            is_stale=self._is_reference_stale(actual_at),
+        )
+        return SyncCoverageDatasetRead(
+            dataset=dataset_key,
+            label=label,
+            actual_at=actual_at,
+            last_success_at=None if snapshot is None else snapshot.get('last_success_at') or snapshot.get('actual_at'),
+            entity_count=None if snapshot is None else snapshot.get('entity_count'),
+            status=status,
+            comment=self._build_problem_comment(last_problem=last_problem, has_gaps=False),
+        )
 
     def should_resume_job(self, job_id: UUID, *, user_id: UUID) -> bool:
         job_row = self._repository.get_job(job_id)
@@ -554,6 +794,111 @@ class SyncService:
     def _ensure_account_access(self, *, user_id: UUID, account_id: UUID) -> None:
         if not self._repository.user_has_account_access(user_id=user_id, account_id=account_id):
             raise HTTPException(status_code=403, detail='Access to this account is forbidden.')
+
+    def _has_active_job(
+        self,
+        active_jobs: list[dict],
+        *,
+        mode: SyncMode,
+        dataset: SyncDataset,
+        job_type: SyncJobType | None = None,
+    ) -> bool:
+        for job in active_jobs:
+            if job['mode'] != mode.value:
+                continue
+            if dataset.value not in (job.get('datasets') or []):
+                continue
+            if job_type is not None and job['job_type'] != job_type.value:
+                continue
+            return True
+        return False
+
+    def _compute_missing_week_ranges(self, periods: list[dict]) -> list[DateRangeRead]:
+        if not periods:
+            return []
+
+        normalized_periods = sorted(
+            {
+                (row['date_from'], row['date_to'])
+                for row in periods
+                if row.get('date_from') is not None and row.get('date_to') is not None
+            },
+            key=lambda row: row[0],
+        )
+        if not normalized_periods:
+            return []
+
+        first_start = get_week_start(normalized_periods[0][0])
+        last_start = get_week_start(normalized_periods[-1][0])
+        loaded_weeks = {get_week_start(period_from) for period_from, _ in normalized_periods}
+
+        missing_periods: list[DateRangeRead] = []
+        cursor = first_start
+        while cursor <= last_start:
+            if cursor not in loaded_weeks:
+                missing_periods.append(
+                    DateRangeRead(
+                        date_from=cursor,
+                        date_to=cursor + timedelta(days=6),
+                    )
+                )
+            cursor += timedelta(days=7)
+        return missing_periods
+
+    def _resolve_dataset_status(
+        self,
+        *,
+        has_data: bool,
+        is_loading: bool,
+        has_problem: bool,
+        has_gaps: bool,
+        is_stale: bool,
+    ) -> SyncCoverageSectionStatus:
+        if is_loading:
+            return SyncCoverageSectionStatus.LOADING
+        if not has_data:
+            return SyncCoverageSectionStatus.ERROR if has_problem else SyncCoverageSectionStatus.EMPTY
+        if has_problem or has_gaps:
+            return SyncCoverageSectionStatus.PARTIAL
+        if is_stale:
+            return SyncCoverageSectionStatus.STALE
+        return SyncCoverageSectionStatus.ACTUAL
+
+    def _resolve_section_status(self, datasets: list[SyncCoverageDatasetRead]) -> SyncCoverageSectionStatus:
+        if not datasets:
+            return SyncCoverageSectionStatus.EMPTY
+
+        statuses = {dataset.status for dataset in datasets}
+        if SyncCoverageSectionStatus.LOADING in statuses:
+            return SyncCoverageSectionStatus.LOADING
+        if SyncCoverageSectionStatus.PARTIAL in statuses:
+            return SyncCoverageSectionStatus.PARTIAL
+        if SyncCoverageSectionStatus.ERROR in statuses:
+            return SyncCoverageSectionStatus.ERROR
+        if statuses == {SyncCoverageSectionStatus.EMPTY}:
+            return SyncCoverageSectionStatus.EMPTY
+        if SyncCoverageSectionStatus.STALE in statuses:
+            return SyncCoverageSectionStatus.STALE
+        return SyncCoverageSectionStatus.ACTUAL
+
+    def _build_problem_comment(self, *, last_problem: dict | None, has_gaps: bool) -> str | None:
+        if has_gaps and last_problem is not None:
+            return 'Есть пропуски по периодам и были ошибки последней загрузки.'
+        if has_gaps:
+            return 'Есть пропуски по периодам.'
+        if last_problem is not None:
+            return 'Последняя загрузка завершилась с ошибкой.'
+        return None
+
+    def _is_operational_stale(self, actual_to: date | None) -> bool:
+        if actual_to is None:
+            return False
+        return actual_to < date.today() - timedelta(days=1)
+
+    def _is_reference_stale(self, actual_at: datetime | None) -> bool:
+        if actual_at is None:
+            return False
+        return actual_at.date() < date.today() - timedelta(days=1)
 
     def _normalize_initial_sales_datasets(self, datasets: list[SyncDataset]) -> list[SyncDataset]:
         unique = list(dict.fromkeys(datasets))

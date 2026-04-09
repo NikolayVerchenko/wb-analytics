@@ -46,6 +46,15 @@ class SyncJobStepStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class SyncCoverageSectionStatus(str, Enum):
+    ACTUAL = "actual"
+    PARTIAL = "partial"
+    STALE = "stale"
+    LOADING = "loading"
+    ERROR = "error"
+    EMPTY = "empty"
+
+
 class SyncJobCreate(BaseModel):
     account_id: UUID
     job_type: SyncJobType
@@ -97,3 +106,42 @@ class SyncJobCreateResponse(BaseModel):
 class SyncJobDetailsResponse(BaseModel):
     job: SyncJobRead
     steps: list[SyncJobStepRead]
+
+
+class DateRangeRead(BaseModel):
+    date_from: date
+    date_to: date
+
+
+class SyncCoverageDatasetRead(BaseModel):
+    dataset: str
+    label: str
+    loaded_from: date | None = None
+    loaded_to: date | None = None
+    actual_at: datetime | None = None
+    last_success_at: datetime | None = None
+    entity_count: int | None = None
+    has_gaps: bool = False
+    missing_periods: list[DateRangeRead] = Field(default_factory=list)
+    status: SyncCoverageSectionStatus
+    comment: str | None = None
+
+
+class SyncCoverageSectionRead(BaseModel):
+    status: SyncCoverageSectionStatus
+    datasets: list[SyncCoverageDatasetRead]
+
+
+class SyncCoverageActiveJobRead(BaseModel):
+    job_id: UUID
+    job_type: SyncJobType
+    mode: SyncMode
+    status: SyncJobStatus
+
+
+class SyncCoverageResponse(BaseModel):
+    account_id: UUID
+    historical: SyncCoverageSectionRead
+    operational: SyncCoverageSectionRead
+    reference_data: SyncCoverageSectionRead
+    active_jobs: list[SyncCoverageActiveJobRead] = Field(default_factory=list)

@@ -6,6 +6,7 @@ import psycopg
 from backend.app.db import db_connection
 from backend.app.modules.auth.deps import get_current_user
 from backend.app.modules.sync.schemas import (
+    SyncCoverageResponse,
     SyncJobCreate,
     SyncJobCreateResponse,
     SyncJobDetailsResponse,
@@ -14,6 +15,15 @@ from backend.app.modules.sync.schemas import (
 from backend.app.modules.sync.service import SyncService
 
 router = APIRouter()
+
+
+@router.get('/coverage', response_model=SyncCoverageResponse)
+def get_sync_coverage(
+    account_id: UUID,
+    current_user: dict = Depends(get_current_user),
+    conn: psycopg.Connection = Depends(db_connection),
+) -> SyncCoverageResponse:
+    return SyncService(conn).get_account_coverage(account_id, user_id=current_user['user_id'])
 
 
 @router.post('/jobs', response_model=SyncJobCreateResponse)

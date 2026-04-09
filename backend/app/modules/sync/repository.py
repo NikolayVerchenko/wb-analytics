@@ -289,6 +289,32 @@ class SyncRepository:
             )
             return cur.fetchone()
 
+    def list_active_jobs_for_account(self, account_id: UUID) -> list[dict]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    job_id,
+                    account_id,
+                    job_type,
+                    mode,
+                    date_from,
+                    date_to,
+                    status,
+                    datasets,
+                    error_message,
+                    created_at,
+                    started_at,
+                    finished_at
+                from core.sync_jobs
+                where account_id = %s
+                  and status in ('pending', 'running')
+                order by created_at desc
+                """,
+                (account_id,),
+            )
+            return list(cur.fetchall())
+
     def list_successful_step_periods_for_account(
         self,
         account_id: UUID,
@@ -327,6 +353,190 @@ class SyncRepository:
                 params,
             )
             return list(cur.fetchall())
+
+    def list_dataset_success_periods(
+        self,
+        account_id: UUID,
+        *,
+        dataset: str,
+        mode: str | None = None,
+        job_type: str | None = None,
+    ) -> list[dict]:
+        conditions = [
+            'j.account_id = %s',
+            's.dataset = %s',
+            "s.status = 'success'",
+        ]
+        params: list[object] = [account_id, dataset]
+        if mode is not None:
+            conditions.append('j.mode = %s')
+            params.append(mode)
+        if job_type is not None:
+            conditions.append('j.job_type = %s')
+            params.append(job_type)
+
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"""
+                select distinct
+                    s.period_from as date_from,
+                    s.period_to as date_to,
+                    s.finished_at
+                from core.sync_job_steps s
+                join core.sync_jobs j
+                  on j.job_id = s.job_id
+                where {' and '.join(conditions)}
+                order by s.period_from asc, s.period_to asc, s.finished_at desc
+                """,
+                params,
+            )
+            return list(cur.fetchall())
+
+    def get_dataset_coverage_bounds(
+        self,
+        account_id: UUID,
+        *,
+        dataset: str,
+        mode: str | None = None,
+        job_type: str | None = None,
+    ) -> dict | None:
+        conditions = [
+            'j.account_id = %s',
+            's.dataset = %s',
+            "s.status = 'success'",
+        ]
+        params: list[object] = [account_id, dataset]
+        if mode is not None:
+            conditions.append('j.mode = %s')
+            params.append(mode)
+        if job_type is not None:
+            conditions.append('j.job_type = %s')
+            params.append(job_type)
+
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"""
+                select
+                    min(s.period_from) as loaded_from,
+                    max(s.period_to) as loaded_to,
+                    max(s.finished_at) as last_success_at
+                from core.sync_job_steps s
+                join core.sync_jobs j
+                  on j.job_id = s.job_id
+                where {' and '.join(conditions)}
+                """,
+                params,
+            )
+            row = cur.fetchone()
+        if row is None or row['loaded_from'] is None:
+            return None
+        return row
+
+    def get_dataset_last_problem(
+        self,
+        account_id: UUID,
+        *,
+        dataset: str,
+        mode: str | None = None,
+        job_type: str | None = None,
+    ) -> dict | None:
+        conditions = [
+            'j.account_id = %s',
+            's.dataset = %s',
+            "s.status = 'failed'",
+        ]
+        params: list[object] = [account_id, dataset]
+        if mode is not None:
+            conditions.append('j.mode = %s')
+            params.append(mode)
+        if job_type is not None:
+            conditions.append('j.job_type = %s')
+            params.append(job_type)
+
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"""
+                select
+                    s.status,
+                    s.error_message,
+                    coalesce(s.finished_at, j.finished_at, j.created_at) as finished_at
+                from core.sync_job_steps s
+                join core.sync_jobs j
+                  on j.job_id = s.job_id
+                where {' and '.join(conditions)}
+                order by coalesce(s.finished_at, j.finished_at, j.created_at) desc
+                limit 1
+                """,
+                params,
+            )
+            return cur.fetchone()
+
+    def get_operational_dataset_freshness(
+        self,
+        account_id: UUID,
+        *,
+        dataset: str,
+        mode: str | None = None,
+        job_type: str | None = None,
+    ) -> dict | None:
+        row = self.get_dataset_coverage_bounds(account_id, dataset=dataset, mode=mode, job_type=job_type)
+        if row is None:
+            return None
+        return {
+            'actual_to': row['loaded_to'],
+            'last_success_at': row['last_success_at'],
+        }
+
+    def get_cards_snapshot(self, account_id: UUID) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    count(*)::int as entity_count,
+                    max(loaded_at) as last_success_at
+                from core.product_cards
+                where account_id = %s
+                """,
+                (account_id,),
+            )
+            row = cur.fetchone()
+        if row is None or row['entity_count'] == 0:
+            return None
+        return row
+
+    def get_stocks_snapshot(self, account_id: UUID) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    count(*)::int as entity_count,
+                    max(snapshot_loaded_at) as actual_at
+                from mart.ui_stock_item_snapshot
+                where account_id = %s
+                """,
+                (account_id,),
+            )
+            row = cur.fetchone()
+        if row is None or row['entity_count'] == 0:
+            return None
+        return row
+
+    def get_supplies_snapshot(self, account_id: UUID) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    count(distinct supply_id)::int as entity_count,
+                    max(coalesce(updated_date, supply_date, create_date, fact_date)) as last_success_at
+                from core.supplies
+                where account_id = %s
+                """,
+                (account_id,),
+            )
+            row = cur.fetchone()
+        if row is None or row['entity_count'] == 0:
+            return None
+        return row
 
     def has_successful_prepare_step_for_account(
         self,
