@@ -49,25 +49,33 @@ def build_rows(
     load_id: uuid.UUID,
     payload: list[dict[str, Any]],
 ) -> list[tuple]:
-    rows: list[tuple] = []
+    rows_by_key: dict[tuple[int, int, date, date], tuple] = {}
+    sentinel_date = date(1970, 1, 1)
     for item in payload:
         nm_id = item.get("nmID")
         if nm_id is None:
             continue
-        rows.append(
-            (
-                account_id,
-                int(nm_id),
-                int_or_none(item.get("incomeId")),
-                int_or_none(item.get("count")),
-                parse_date_or_none(item.get("giCreateDate")),
-                parse_date_or_none(item.get("shkCreateDate")),
-                item.get("subjectName"),
-                decimal_or_none(item.get("total")),
-                load_id,
-            )
+        income_id = int_or_none(item.get("incomeId"))
+        gi_create_date = parse_date_or_none(item.get("giCreateDate"))
+        shk_create_date = parse_date_or_none(item.get("shkCreateDate"))
+        key = (
+            int(nm_id),
+            income_id if income_id is not None else -1,
+            gi_create_date or sentinel_date,
+            shk_create_date or sentinel_date,
         )
-    return rows
+        rows_by_key[key] = (
+            account_id,
+            int(nm_id),
+            income_id,
+            int_or_none(item.get("count")),
+            gi_create_date,
+            shk_create_date,
+            item.get("subjectName"),
+            decimal_or_none(item.get("total")),
+            load_id,
+        )
+    return list(rows_by_key.values())
 
 
 def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
@@ -89,7 +97,13 @@ def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
                 loaded_at
             )
             values (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-            on conflict (account_id, nm_id, income_id, gi_create_date, shk_create_date)
+            on conflict (
+                account_id,
+                nm_id,
+                coalesce(income_id, -1),
+                coalesce(gi_create_date, '1970-01-01'::date),
+                coalesce(shk_create_date, '1970-01-01'::date)
+            )
             do update set
                 item_count = excluded.item_count,
                 subject_name = excluded.subject_name,
