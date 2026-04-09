@@ -144,9 +144,19 @@
           <h4 class="section-title sync-subtitle">{{ currentSectionTitle }}</h4>
           <p class="sync-helper-text">{{ currentSectionDescription }}</p>
         </div>
-        <span class="sync-status-pill" :data-status="currentSection.status">
-          {{ formatSectionStatus(currentSection.status) }}
-        </span>
+        <div class="sync-section-actions">
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="props.primaryActionDisabled"
+            @click="emit('primary-action')"
+          >
+            {{ props.createLoading ? props.primaryActionLoadingLabel : props.primaryActionLabel }}
+          </button>
+          <span class="sync-status-pill" :data-status="currentSection.status">
+            {{ formatSectionStatus(currentSection.status) }}
+          </span>
+        </div>
       </div>
 
       <div class="sync-coverage-table-wrapper">
@@ -215,10 +225,15 @@ export type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference
 const props = defineProps<{
   coverage: SyncCoverageResponse | null
   activeTab?: CoverageTab
+  createLoading?: boolean
+  primaryActionLabel?: string
+  primaryActionLoadingLabel?: string
+  primaryActionDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:activeTab', value: CoverageTab): void
+  (e: 'primary-action'): void
 }>()
 
 const activeTab = computed<CoverageTab>({

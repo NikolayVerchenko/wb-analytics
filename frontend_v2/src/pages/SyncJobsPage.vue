@@ -32,15 +32,6 @@
 
       <div class="sync-form-actions">
         <button
-          type="button"
-          class="primary-button"
-          :disabled="primaryActionDisabled"
-          @click="handlePrimaryAction"
-        >
-          {{ createLoading ? primaryActionLoadingLabel : primaryActionLabel }}
-        </button>
-
-        <button
           v-if="jobId && canCancelJob"
           type="button"
           class="secondary-button"
@@ -63,7 +54,7 @@
       </div>
 
       <p class="sync-helper-text">
-        {{ actionHelperText }}
+        Выберите кабинет, а для истории ещё и период. Дальше запускайте загрузку из нужной вкладки ниже.
       </p>
 
       <div v-if="createError" class="message message-error">{{ createError }}</div>
@@ -150,6 +141,11 @@
       v-if="coverage"
       v-model:active-tab="selectedCoverageTab"
       :coverage="coverage"
+      :create-loading="createLoading"
+      :primary-action-label="primaryActionLabel"
+      :primary-action-loading-label="primaryActionLoadingLabel"
+      :primary-action-disabled="primaryActionDisabled"
+      @primary-action="handlePrimaryAction"
     />
 
     <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
@@ -282,19 +278,6 @@ const actionDescription = computed(() => {
   }
   return 'Сначала выберите кабинет и тип данных ниже. Для истории задайте период, для оперативных и справочных данных достаточно кабинета.'
 })
-const actionHelperText = computed(() => {
-  if (selectedCoverageTab.value === 'historical') {
-    return 'Для первичной загрузки выбирайте полный период. Если часть шагов упёрлась во временные ошибки WB, система продолжит их автоматически или через кнопку повторного запуска ошибок.'
-  }
-  if (selectedCoverageTab.value === 'operational') {
-    return 'Этот запуск обновляет только текущую незакрытую неделю. Финальные цифры сформируются после закрытия недели.'
-  }
-  if (selectedCoverageTab.value === 'reference') {
-    return 'Остатки можно обновлять отдельно. Карточки подтягиваются вместе с историческими и оперативными загрузками, поставки живут в отдельном разделе.'
-  }
-  return 'На вкладке История задавайте период. На вкладках Оперативные и Справочники достаточно выбрать кабинет.'
-})
-
 function formatDate(value: Date): string {
   return value.toISOString().slice(0, 10)
 }

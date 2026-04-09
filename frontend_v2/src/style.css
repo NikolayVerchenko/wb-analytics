@@ -598,6 +598,14 @@ td.numeric {
   flex-wrap: wrap;
 }
 
+.sync-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .sync-job-id {
   margin: 6px 0 0;
   color: #6b7280;
