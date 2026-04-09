@@ -235,15 +235,28 @@ function normalizeSyncErrorMessage(message: string): string {
   const lowered = message.toLowerCase()
 
   if (isRateLimitMessage(message)) {
-    return 'WB API: 429 Too Many Requests. Wildberries ограничил запросы глобальным лимитом. Попробуем повторить позже.'
+    return 'WB API временно ограничил запросы. Попробуем повторить позже.'
   }
 
   if (/\b(500|502|503|504)\b/.test(message)) {
-    return 'WB API: временная серверная ошибка 5xx. Это похоже на сбой на стороне Wildberries.'
+    return 'WB API временно недоступен. Это похоже на ошибку на стороне Wildberries.'
   }
 
   if (lowered.includes('timeout') || lowered.includes('timed out')) {
-    return 'WB API: превышено время ожидания ответа.'
+    return 'WB API слишком долго отвечает. Попробуем повторить позже.'
+  }
+
+  if (lowered.includes('duplicate key value') || lowered.includes('on conflict')) {
+    return 'Шаг столкнулся с повторяющимися данными. После обновления загрузчика его можно безопасно запустить повторно.'
+  }
+
+  if (lowered.startsWith('command failed with exit code 1:')) {
+    const stderrMatch = message.match(/stderr:\s*([\s\S]*?)(?:\s*stdout:|$)/i)
+    if (stderrMatch && stderrMatch[1]?.trim()) {
+      return normalizeSyncErrorMessage(stderrMatch[1].trim())
+    }
+
+    return 'Один из загрузчиков завершился ошибкой. Откройте детали или повторите проблемный шаг позже.'
   }
 
   const statusTextMatch = message.match(/statusText["']?\s*[:=]\s*["']([^"']+)["']/i)
@@ -253,7 +266,7 @@ function normalizeSyncErrorMessage(message: string): string {
     return `WB API: ${statusMatch[1]}${suffix}`
   }
 
-  return message.length > 300 ? `${message.slice(0, 300)}...` : message
+  return message.length > 220 ? `${message.slice(0, 220)}...` : message
 }
 
 function isRateLimitMessage(message: string): boolean {

@@ -560,6 +560,31 @@ td.numeric {
   flex-wrap: wrap;
 }
 
+.sync-form-actions-advanced {
+  margin-top: 12px;
+}
+
+.sync-helper-text {
+  margin: 0;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.sync-advanced-panel {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.sync-advanced-panel summary {
+  cursor: pointer;
+  color: #374151;
+  font-weight: 600;
+}
+
+.sync-advanced-panel[open] summary {
+  margin-bottom: 12px;
+}
+
 .section-title {
   margin: 0;
   font-size: 22px;

@@ -4,9 +4,8 @@
       <div>
         <h2 class="page-title">Загрузка данных</h2>
         <p class="page-description">
-          Экран запускает четыре отдельных контура: weekly backfill продаж, обновление незакрытой недели,
-          отдельную загрузку воронки продаж и snapshot-обновление остатков. Для history sales и funnel можно
-          либо начать период с нуля, либо продолжить только те закрытые недели и дни, которые ещё не были успешно загружены.
+          Запускайте одно основное обновление по кабинету и периоду. Продажи, карточки, реклама, приёмка
+          и хранение подтягиваются автоматически внутри одной job.
         </p>
       </div>
 
@@ -39,62 +38,7 @@
           :disabled="createLoading || !canSubmit"
           @click="handleCreateJob"
         >
-          {{ createLoading ? 'Создание job...' : 'Загрузить недельные данные' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="createLoading || !canSubmit"
-          @click="handleContinueSalesJob"
-        >
-          {{ createLoading ? 'Создание job...' : 'Продолжить недельные данные' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="createLoading || !form.accountId"
-          @click="handleCreateOpenWeekJob"
-        >
-          {{ createLoading ? 'Создание job...' : 'Обновить незакрытую неделю' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="createLoading || !canSubmit"
-          @click="handleCreateFunnelJob"
-        >
-          {{ createLoading ? 'Создание job...' : 'Загрузить воронку продаж' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="createLoading || !canSubmit"
-          @click="handleContinueFunnelJob"
-        >
-          {{ createLoading ? 'Создание job...' : 'Продолжить воронку продаж' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="createLoading || !form.accountId"
-          @click="handleCreateStockSnapshotJob"
-        >
-          {{ createLoading ? 'Создание job...' : 'Обновить остатки сейчас' }}
-        </button>
-
-        <button
-          v-if="jobId"
-          type="button"
-          class="secondary-button"
-          :disabled="detailsLoading"
-          @click="loadCurrentJob(jobId)"
-        >
-          Обновить статус
+          {{ createLoading ? 'Запускаю обновление...' : 'Обновить данные' }}
         </button>
 
         <button
@@ -108,34 +52,99 @@
         </button>
 
         <button
-          v-if="jobId && canRestartJob"
-          type="button"
-          class="secondary-button"
-          :disabled="restartLoading"
-          @click="handleRestartJob(jobId)"
-        >
-          {{ restartLoading ? 'Продолжаю...' : 'Продолжить' }}
-        </button>
-
-        <button
           v-if="jobId && hasFailedSteps"
           type="button"
           class="secondary-button"
           :disabled="retryFailedLoading"
           @click="handleRetryFailed(jobId)"
         >
-          {{ retryFailedLoading ? 'Перезапуск ошибок...' : 'Повторить ошибки' }}
+          {{ retryFailedLoading ? 'Повторяю...' : 'Повторить проблемные шаги' }}
         </button>
       </div>
+
+      <p class="sync-helper-text">
+        Для первичной загрузки выбирайте полный период. Если часть шагов упёрлась во временные ошибки WB,
+        система продолжит их автоматически или через кнопку повторного запуска ошибок.
+      </p>
 
       <div v-if="createError" class="message message-error">{{ createError }}</div>
       <div v-else-if="createSuccessMessage" class="message message-info">{{ createSuccessMessage }}</div>
       <div v-if="retryFailedError" class="message message-error">{{ retryFailedError }}</div>
       <div v-if="cancelError" class="message message-error">{{ cancelError }}</div>
       <div v-if="restartError" class="message message-error">{{ restartError }}</div>
+
+      <details class="sync-advanced-panel">
+        <summary>Технические действия</summary>
+        <div class="sync-form-actions sync-form-actions-advanced">
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="createLoading || !canSubmit"
+            @click="handleContinueSalesJob"
+          >
+            {{ createLoading ? 'Создание job...' : 'Продолжить недельные данные' }}
+          </button>
+
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="createLoading || !form.accountId"
+            @click="handleCreateOpenWeekJob"
+          >
+            {{ createLoading ? 'Создание job...' : 'Обновить незакрытую неделю' }}
+          </button>
+
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="createLoading || !canSubmit"
+            @click="handleCreateFunnelJob"
+          >
+            {{ createLoading ? 'Создание job...' : 'Загрузить воронку продаж' }}
+          </button>
+
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="createLoading || !canSubmit"
+            @click="handleContinueFunnelJob"
+          >
+            {{ createLoading ? 'Создание job...' : 'Продолжить воронку продаж' }}
+          </button>
+
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="createLoading || !form.accountId"
+            @click="handleCreateStockSnapshotJob"
+          >
+            {{ createLoading ? 'Создание job...' : 'Обновить остатки сейчас' }}
+          </button>
+
+          <button
+            v-if="jobId"
+            type="button"
+            class="secondary-button"
+            :disabled="detailsLoading"
+            @click="loadCurrentJob(jobId)"
+          >
+            Обновить статус
+          </button>
+
+          <button
+            v-if="jobId && canRestartJob"
+            type="button"
+            class="secondary-button"
+            :disabled="restartLoading"
+            @click="handleRestartJob(jobId)"
+          >
+            {{ restartLoading ? 'Продолжаю...' : 'Продолжить' }}
+          </button>
+        </div>
+      </details>
     </div>
 
-    <div v-if="detailsLoading" class="message message-info">Обновляю статус job...</div>
+    <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
     <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
 
     <SyncJobProgress
@@ -233,7 +242,6 @@ function getAccountTitle(account: Account): string {
   return account.seller_name || account.name || 'Без названия'
 }
 
-
 function saveSyncPageState() {
   if (typeof window === 'undefined') {
     return
@@ -302,7 +310,6 @@ async function restoreSyncPageState() {
     return false
   }
 }
-
 
 async function loadAccountsList() {
   try {

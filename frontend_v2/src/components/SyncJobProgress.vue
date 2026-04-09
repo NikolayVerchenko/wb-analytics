@@ -2,7 +2,7 @@
   <section v-if="jobDetails" class="card stack">
     <div class="sync-job-header">
       <div>
-        <h3 class="section-title">Текущая job</h3>
+        <h3 class="section-title">Текущая загрузка</h3>
         <p class="sync-job-id">{{ jobDetails.job.job_id }}</p>
       </div>
       <span class="sync-status-pill" :data-status="jobDetails.job.status">
@@ -12,7 +12,7 @@
 
     <div class="sync-progress-block">
       <div class="sync-progress-meta">
-        <span>Обработано {{ completedSteps }} из {{ totalSteps }} недель</span>
+        <span>Обработано {{ completedSteps }} из {{ totalSteps }} шагов</span>
         <span>{{ progressPercent }}%</span>
       </div>
       <div class="sync-progress-track">
@@ -26,11 +26,11 @@
         <span class="totals-value sync-summary-value">{{ currentAccountTitle }}</span>
       </div>
       <div class="totals-item">
-        <span class="totals-label">Период запроса</span>
+        <span class="totals-label">Период загрузки</span>
         <span class="totals-value sync-summary-value">{{ jobDetails.job.date_from }} - {{ jobDetails.job.date_to }}</span>
       </div>
       <div class="totals-item">
-        <span class="totals-label">Всего недель</span>
+        <span class="totals-label">Всего шагов</span>
         <span class="totals-value">{{ totalSteps }}</span>
       </div>
       <div class="totals-item">
@@ -58,7 +58,7 @@
         <span class="totals-value sync-summary-value">{{ rateLimitStats.last429At ?? '—' }}</span>
       </div>
       <div class="totals-item">
-        <span class="totals-label">Неделя с лимитом</span>
+        <span class="totals-label">Период с лимитом</span>
         <span class="totals-value sync-summary-value">{{ rateLimitStats.last429Week ?? '—' }}</span>
       </div>
     </div>
@@ -69,7 +69,7 @@
           <div>
             <strong>{{ week.periodFrom }} - {{ week.periodTo }}</strong>
             <div class="sync-step-meta">
-              успешных: {{ week.counts.success }} · в работе: {{ week.counts.running }} · ожидают: {{ week.counts.pending }} · ошибок: {{ week.counts.failed }}
+              успешно: {{ week.counts.success }} · в работе: {{ week.counts.running }} · ожидают: {{ week.counts.pending }} · ошибок: {{ week.counts.failed }}
             </div>
           </div>
           <div class="sync-step-tags">
@@ -79,7 +79,7 @@
               class="sync-status-pill sync-status-pill-small"
               :data-status="item.status"
             >
-              {{ item.dataset }}
+              {{ datasetLabel(item.dataset) }}
             </span>
           </div>
         </div>
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { toRef } from 'vue'
 import { useSyncJobProgress } from '../composables/useSyncJobProgress'
-import type { SyncJobDetailsResponse } from '../types/sync'
+import type { SyncDataset, SyncJobDetailsResponse } from '../types/sync'
 
 const props = defineProps<{
   jobDetails: SyncJobDetailsResponse | null
@@ -128,4 +128,19 @@ const {
   jobStatusLabel,
   rateLimitStats,
 } = useSyncJobProgress(toRef(props, 'jobDetails'))
+
+function datasetLabel(dataset: SyncDataset): string {
+  const labels: Record<SyncDataset, string> = {
+    sales: 'Продажи',
+    cards: 'Карточки',
+    adverts_snapshot: 'Реклама',
+    adverts_cost: 'Расходы рекламы',
+    acceptance: 'Приёмка',
+    storage: 'Хранение',
+    sales_funnel: 'Воронка',
+    warehouse_remains: 'Остатки',
+  }
+
+  return labels[dataset] ?? dataset
+}
 </script>
