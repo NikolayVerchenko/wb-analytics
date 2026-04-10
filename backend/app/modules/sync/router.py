@@ -7,6 +7,8 @@ from backend.app.db import db_connection
 from backend.app.modules.auth.deps import get_current_user
 from backend.app.modules.sync.schemas import (
     SyncCoverageResponse,
+    SyncHistoryGapFillRequest,
+    SyncHistoryGapFillResponse,
     SyncJobCreate,
     SyncJobCreateResponse,
     SyncJobDetailsResponse,
@@ -33,6 +35,15 @@ def create_sync_job(
     conn: psycopg.Connection = Depends(db_connection),
 ) -> SyncJobCreateResponse:
     return SyncService(conn).create_job(payload, user_id=current_user['user_id'])
+
+
+@router.post('/history/fill-missing', response_model=SyncHistoryGapFillResponse)
+def fill_missing_history(
+    payload: SyncHistoryGapFillRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: psycopg.Connection = Depends(db_connection),
+) -> SyncHistoryGapFillResponse:
+    return SyncService(conn).fill_missing_history(payload, user_id=current_user['user_id'])
 
 
 @router.post('/jobs/continue', response_model=SyncJobCreateResponse)

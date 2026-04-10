@@ -15,6 +15,8 @@ from backend.app.modules.sync.schemas import (
     SyncCoverageResponse,
     SyncCoverageSectionRead,
     SyncCoverageSectionStatus,
+    SyncHistoryGapFillRequest,
+    SyncHistoryGapFillResponse,
     SyncJobCreate,
     SyncJobCreateResponse,
     SyncJobDetailsResponse,
@@ -43,6 +45,12 @@ class SyncService:
         ('cards', 'Карточки'),
         ('stocks', 'Остатки'),
         ('supplies', 'Поставки'),
+    )
+    _GAP_FILL_DATASETS: tuple[SyncDataset, ...] = (
+        SyncDataset.ADVERTS_SNAPSHOT,
+        SyncDataset.ADVERTS_COST,
+        SyncDataset.ACCEPTANCE,
+        SyncDataset.STORAGE,
     )
 
     def __init__(self, conn: psycopg.Connection) -> None:
@@ -84,6 +92,121 @@ class SyncService:
         if payload.job_type == SyncJobType.OPEN_WEEK_REFRESH:
             raise HTTPException(status_code=400, detail='Open week refresh does not support continue; start a fresh open-week job instead.')
         raise HTTPException(status_code=400, detail='Unsupported job type for MVP')
+
+    def fill_missing_history(
+        self,
+        payload: SyncHistoryGapFillRequest,
+        *,
+        user_id: UUID,
+    ) -> SyncHistoryGapFillResponse:
+        self._ensure_account_access(user_id=user_id, account_id=payload.account_id)
+        datasets = self._normalize_gap_fill_datasets(payload.datasets)
+        active_jobs = self._repository.list_active_jobs_for_account(payload.account_id)
+
+        conflicting_job = self._find_conflicting_historical_job(active_jobs, datasets=datasets)
+        if conflicting_job is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    'По этому кабинету уже выполняется историческая загрузка: '
+                    f"job_id={conflicting_job['job_id']}. "
+                    'Дождитесь завершения текущей job или остановите её перед догрузкой отставания.'
+                ),
+            )
+
+        sales_periods = self._repository.list_dataset_success_periods(
+            payload.account_id,
+            dataset=SyncDataset.SALES.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        if not sales_periods:
+            raise HTTPException(
+                status_code=400,
+                detail='Сначала нужно загрузить продажи. Нельзя догрузить историю относительно sales, если sales ещё не загружены.',
+            )
+
+        plan_map: dict[tuple[date, date], list[SyncDataset]] = {}
+        include_adverts_snapshot_prepare = False
+
+        adverts_snapshot_prepared = self._repository.has_successful_prepare_step_for_account(
+            payload.account_id,
+            mode=SyncMode.WEEKLY.value,
+            dataset=SyncDataset.ADVERTS_SNAPSHOT.value,
+        )
+
+        for dataset in datasets:
+            if dataset == SyncDataset.ADVERTS_SNAPSHOT:
+                include_adverts_snapshot_prepare = include_adverts_snapshot_prepare or not adverts_snapshot_prepared
+                continue
+
+            target_periods = self._repository.list_dataset_success_periods(
+                payload.account_id,
+                dataset=dataset.value,
+                mode=SyncMode.WEEKLY.value,
+            )
+            missing_periods = self._compute_missing_periods_against_anchor(sales_periods, target_periods)
+            if dataset == SyncDataset.ADVERTS_COST and missing_periods:
+                include_adverts_snapshot_prepare = True
+
+            for period_from, period_to in missing_periods:
+                plan_map.setdefault((period_from, period_to), [])
+                if dataset not in plan_map[(period_from, period_to)]:
+                    plan_map[(period_from, period_to)].append(dataset)
+
+        weekly_step_plan = [
+            (period_from, period_to, datasets_for_period)
+            for (period_from, period_to), datasets_for_period in sorted(plan_map.items(), key=lambda item: item[0][0], reverse=True)
+        ]
+
+        planned_steps = sum(len(datasets_for_period) for _, _, datasets_for_period in weekly_step_plan)
+        if include_adverts_snapshot_prepare:
+            planned_steps += 1
+
+        if planned_steps == 0:
+            return SyncHistoryGapFillResponse(
+                status='noop',
+                message='Все выбранные данные уже догружены относительно продаж.',
+                datasets=datasets,
+                planned_steps=0,
+            )
+
+        sales_bounds = self._repository.get_dataset_coverage_bounds(
+            payload.account_id,
+            dataset=SyncDataset.SALES.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        if sales_bounds is None:
+            raise HTTPException(status_code=400, detail='Не удалось определить покрытие продаж для historical gap-fill.')
+
+        effective_date_from = min(
+            [period_from for period_from, _, _ in weekly_step_plan],
+            default=sales_bounds['loaded_from'],
+        )
+        effective_date_to = max(
+            [period_to for _, period_to, _ in weekly_step_plan],
+            default=sales_bounds['loaded_to'],
+        )
+
+        job_response = self._create_job_with_plan(
+            payload=SyncJobCreate(
+                account_id=payload.account_id,
+                job_type=SyncJobType.HISTORY_GAP_FILL,
+                mode=SyncMode.WEEKLY,
+                date_from=effective_date_from,
+                date_to=effective_date_to,
+                datasets=datasets,
+            ),
+            weekly_step_plan=weekly_step_plan,
+            datasets=datasets,
+            include_cards_prepare=False,
+            include_adverts_snapshot_prepare=include_adverts_snapshot_prepare,
+        )
+        return SyncHistoryGapFillResponse(
+            job_id=job_response.job_id,
+            status='pending',
+            datasets=datasets,
+            planned_steps=planned_steps,
+        )
 
     def _create_initial_sales_job(self, payload: SyncJobCreate) -> SyncJobCreateResponse:
         effective_datasets = self._normalize_initial_sales_datasets(payload.datasets)
@@ -899,6 +1022,54 @@ class SyncService:
         if actual_at is None:
             return False
         return actual_at.date() < date.today() - timedelta(days=1)
+
+    def _normalize_gap_fill_datasets(self, datasets: list[SyncDataset]) -> list[SyncDataset]:
+        unique = list(dict.fromkeys(datasets))
+        allowed = set(self._GAP_FILL_DATASETS)
+        if not unique:
+            raise HTTPException(status_code=400, detail='Выберите хотя бы один исторический набор данных для догрузки.')
+        if any(dataset not in allowed for dataset in unique):
+            raise HTTPException(
+                status_code=400,
+                detail='Gap-fill поддерживает только adverts_snapshot, adverts_cost, acceptance и storage.',
+            )
+        return unique
+
+    def _compute_missing_periods_against_anchor(
+        self,
+        anchor_periods: list[dict],
+        target_periods: list[dict],
+    ) -> list[tuple[date, date]]:
+        anchor = {
+            (row['date_from'], row['date_to'])
+            for row in anchor_periods
+            if row.get('date_from') is not None and row.get('date_to') is not None
+        }
+        target = {
+            (row['date_from'], row['date_to'])
+            for row in target_periods
+            if row.get('date_from') is not None and row.get('date_to') is not None
+        }
+        return sorted(anchor - target, key=lambda item: item[0], reverse=True)
+
+    def _find_conflicting_historical_job(
+        self,
+        active_jobs: list[dict],
+        *,
+        datasets: list[SyncDataset],
+    ) -> dict | None:
+        requested = {dataset.value for dataset in datasets}
+        requested.add(SyncDataset.SALES.value)
+
+        for job in active_jobs:
+            if job['mode'] != SyncMode.WEEKLY.value:
+                continue
+            job_datasets = set(job.get('datasets') or [])
+            if job['job_type'] == SyncJobType.SALES_FUNNEL_BACKFILL.value:
+                continue
+            if job_datasets & requested:
+                return job
+        return None
 
     def _normalize_initial_sales_datasets(self, datasets: list[SyncDataset]) -> list[SyncDataset]:
         unique = list(dict.fromkeys(datasets))

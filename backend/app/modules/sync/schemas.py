@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ class SyncJobType(str, Enum):
     SALES_FUNNEL_BACKFILL = "sales_funnel_backfill"
     STOCK_SNAPSHOT_REFRESH = "stock_snapshot_refresh"
     OPEN_WEEK_REFRESH = "open_week_refresh"
+    HISTORY_GAP_FILL = "history_gap_fill"
 
 
 class SyncMode(str, Enum):
@@ -101,6 +103,19 @@ class SyncJobRead(BaseModel):
 class SyncJobCreateResponse(BaseModel):
     job_id: UUID
     status: SyncJobStatus
+
+
+class SyncHistoryGapFillRequest(BaseModel):
+    account_id: UUID
+    datasets: list[SyncDataset]
+
+
+class SyncHistoryGapFillResponse(BaseModel):
+    job_id: UUID | None = None
+    status: Literal['pending', 'noop']
+    message: str | None = None
+    datasets: list[SyncDataset] = Field(default_factory=list)
+    planned_steps: int = 0
 
 
 class SyncJobDetailsResponse(BaseModel):
