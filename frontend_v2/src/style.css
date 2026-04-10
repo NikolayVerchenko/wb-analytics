@@ -547,6 +547,12 @@ td.numeric {
   color: #111827;
 }
 
+.secondary-button-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .secondary-button-compact {
   padding: 6px 12px;
   font-size: 14px;
@@ -556,6 +562,14 @@ td.numeric {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+}
+
+.sync-account-field {
+  max-width: 560px;
+}
+
+.sync-period-field {
+  max-width: 360px;
 }
 
 .sync-form-actions {

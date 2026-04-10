@@ -4,7 +4,7 @@
       <div>
         <h3 class="section-title">Доступность данных</h3>
         <p class="sync-helper-text">
-          Сначала обзор, затем отдельные вкладки по истории, оперативным данным и справочникам.
+          Выберите нужный раздел: история, оперативные данные или справочники.
         </p>
       </div>
       <span class="sync-status-pill" :data-status="overallStatus">
@@ -59,86 +59,7 @@
       </button>
     </div>
 
-    <div class="sync-tabs" role="tablist" aria-label="Разделы загрузки данных">
-      <button
-        type="button"
-        class="sync-tab-button"
-        :class="{ 'sync-tab-button-active': activeTab === 'overview' }"
-        @click="activeTab = 'overview'"
-      >
-        Обзор
-      </button>
-      <button
-        type="button"
-        class="sync-tab-button"
-        :class="{ 'sync-tab-button-active': activeTab === 'historical' }"
-        @click="activeTab = 'historical'"
-      >
-        История
-      </button>
-      <button
-        type="button"
-        class="sync-tab-button"
-        :class="{ 'sync-tab-button-active': activeTab === 'operational' }"
-        @click="activeTab = 'operational'"
-      >
-        Оперативные
-      </button>
-      <button
-        type="button"
-        class="sync-tab-button"
-        :class="{ 'sync-tab-button-active': activeTab === 'reference' }"
-        @click="activeTab = 'reference'"
-      >
-        Справочники
-      </button>
-    </div>
-
-    <section v-if="activeTab === 'overview'" class="stack">
-      <div class="sync-coverage-overview-grid">
-        <article class="sync-coverage-overview-card">
-          <strong>Исторические данные</strong>
-          <span class="sync-status-pill sync-status-pill-small" :data-status="historicalUiStatus">
-            {{ formatSectionStatus(historicalUiStatus, 'historical') }}
-          </span>
-          <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.historical.datasets, 'historical') }}</p>
-        </article>
-        <article class="sync-coverage-overview-card">
-          <strong>Оперативные данные</strong>
-          <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.operational.status">
-            {{ formatSectionStatus(coverage.operational.status) }}
-          </span>
-          <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.operational.datasets) }}</p>
-        </article>
-        <article class="sync-coverage-overview-card">
-          <strong>Карточки, остатки, поставки</strong>
-          <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.reference_data.status">
-            {{ formatSectionStatus(coverage.reference_data.status) }}
-          </span>
-          <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.reference_data.datasets) }}</p>
-        </article>
-      </div>
-
-      <div class="sync-coverage-attention">
-        <h4 class="section-title sync-subtitle">Что требует внимания</h4>
-        <div v-if="attentionItems.length" class="stack">
-          <div
-            v-for="item in attentionItems"
-            :key="item.key"
-            class="message"
-            :class="item.status === 'error' ? 'message-error' : 'message-info'"
-          >
-            <strong>{{ item.section }}: {{ item.label }}</strong>
-            <div>{{ item.message }}</div>
-          </div>
-        </div>
-        <div v-else class="message message-info">
-          Существенных проблем не видно. Данные по всем контурам выглядят актуальными.
-        </div>
-      </div>
-    </section>
-
-    <section v-else class="stack">
+    <section class="stack">
       <div class="sync-job-header">
         <div>
           <h4 class="section-title sync-subtitle">{{ currentSectionTitle }}</h4>
@@ -299,7 +220,7 @@ import type {
   SyncCoverageSectionStatus,
 } from '../types/sync'
 
-export type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference'
+export type CoverageTab = 'historical' | 'operational' | 'reference'
 
 const props = defineProps<{
   coverage: SyncCoverageResponse | null
@@ -317,13 +238,13 @@ const emit = defineEmits<{
 }>()
 
 const activeTab = computed<CoverageTab>({
-  get: () => props.activeTab ?? 'overview',
+  get: () => props.activeTab ?? 'historical',
   set: (value) => emit('update:activeTab', value),
 })
 
 const overallStatus = computed<SyncCoverageSectionStatus>(() => {
   const statuses = [
-    props.coverage?.historical.status,
+    historicalUiStatus.value,
     props.coverage?.operational.status,
     props.coverage?.reference_data.status,
   ].filter(Boolean) as SyncCoverageSectionStatus[]
@@ -407,41 +328,9 @@ const currentSectionDescription = computed(() => {
   return 'Справочные и snapshot-данные для интерфейса и расчётов.'
 })
 
-const attentionItems = computed(() => {
-  if (!props.coverage) {
-    return []
-  }
-
-  const sections: Array<{ section: string; datasets: SyncCoverageDataset[] }> = [
-    { section: 'История', datasets: props.coverage.historical.datasets },
-    { section: 'Оперативные', datasets: props.coverage.operational.datasets },
-    { section: 'Справочники', datasets: props.coverage.reference_data.datasets },
-  ]
-
-  return sections.flatMap((section) =>
-    section.datasets
-      .filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty')
-      .map((dataset) => ({
-        key: `${section.section}:${dataset.dataset}`,
-        section: section.section,
-        label: dataset.label,
-        status: dataset.status,
-        message:
-          dataset.comment ??
-          (dataset.status === 'partial'
-            ? 'Есть пробелы или частичные ошибки.'
-            : dataset.status === 'stale'
-              ? 'Данные устарели и требуют обновления.'
-              : dataset.status === 'loading'
-                ? 'Сейчас идёт обновление.'
-                : 'Есть проблема с последней загрузкой.'),
-      })),
-  )
-})
-
 function formatSectionStatus(
   status: SyncCoverageSectionStatus,
-  section: CoverageTab | 'historical' | 'operational' | 'reference' = 'overview',
+  section: CoverageTab | 'historical' | 'operational' | 'reference' = 'historical',
 ): string {
   if (section === 'historical') {
     return status === 'actual' ? 'Все загружено' : 'Не все загружено'
@@ -476,7 +365,7 @@ function showDatasetGapFillAction(dataset: SyncCoverageDataset): boolean {
   return activeTab.value === 'historical' && isGapFillEligible(dataset) && !isHistoricalDatasetReady(dataset)
 }
 
-function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab | 'historical' | 'operational' | 'reference' = 'overview'): string {
+function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab | 'historical' | 'operational' | 'reference' = 'historical'): string {
   if (section === 'historical') {
     const notReady = getHistoricalDisplayDatasets(datasets).filter((dataset) => !isHistoricalDatasetReady(dataset))
     const period = historicalCoveragePeriod.value

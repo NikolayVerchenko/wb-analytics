@@ -9,7 +9,7 @@
       </div>
 
       <div class="sync-form-grid">
-        <div class="field">
+        <div class="field sync-account-field">
           <label for="sync-account">Кабинет</label>
           <select id="sync-account" v-model="form.accountId" class="field-select">
             <option value="">Выберите кабинет</option>
@@ -19,7 +19,7 @@
           </select>
         </div>
 
-        <div v-if="showDateRangeFields" class="field">
+        <div v-if="showDateRangeFields" class="field sync-period-field">
           <label>Период</label>
           <PeriodFilter
             :date-from="form.dateFrom"
@@ -30,6 +30,33 @@
       </div>
 
       <div class="sync-form-actions">
+        <button
+          type="button"
+          class="secondary-button"
+          :class="{ 'secondary-button-active': selectedCoverageTab === 'historical' }"
+          @click="selectedCoverageTab = 'historical'"
+        >
+          История
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :class="{ 'secondary-button-active': selectedCoverageTab === 'operational' }"
+          @click="selectedCoverageTab = 'operational'"
+        >
+          Опер. данные
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          :class="{ 'secondary-button-active': selectedCoverageTab === 'reference' }"
+          @click="selectedCoverageTab = 'reference'"
+        >
+          Справочники
+        </button>
+
         <button
           v-if="jobId && canCancelJob"
           type="button"
@@ -183,7 +210,7 @@ const route = useRoute()
 const router = useRouter()
 const accounts = ref<Account[]>([])
 const SYNC_PAGE_STATE_KEY = 'sync-page-state'
-type CoverageTab = 'overview' | 'historical' | 'operational' | 'reference'
+type CoverageTab = 'historical' | 'operational' | 'reference'
 
 const {
   jobDetails,
@@ -219,7 +246,7 @@ const form = reactive({
   dateFrom: getDefaultDateFrom(),
   dateTo: getDefaultDateTo(),
 })
-const selectedCoverageTab = ref<CoverageTab>('overview')
+const selectedCoverageTab = ref<CoverageTab>('historical')
 
 const jobId = computed(() => (typeof route.query.job_id === 'string' ? route.query.job_id : ''))
 const hasFailedSteps = computed(() => jobDetails.value?.steps.some((step) => step.status === 'failed') ?? false)
@@ -237,7 +264,7 @@ const currentAccountTitle = computed(() => {
 })
 const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
 const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
-const showDateRangeFields = computed(() => selectedCoverageTab.value === 'overview')
+const showDateRangeFields = computed(() => selectedCoverageTab.value === 'historical')
 const primaryActionLabel = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
     return 'Догрузить всё отставание'
@@ -482,7 +509,7 @@ function getHistoricalGapFillDatasets(): SyncDataset[] {
       if (!anchorFrom || !anchorTo) {
         return false
       }
-      if (!['adverts_cost', 'acceptance', 'storage'].includes(dataset.dataset)) {
+      if (!['sales_funnel', 'adverts_cost', 'acceptance', 'storage'].includes(dataset.dataset)) {
         return false
       }
       if (!dataset.loaded_from || !dataset.loaded_to) {

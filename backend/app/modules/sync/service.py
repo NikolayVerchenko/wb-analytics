@@ -32,6 +32,7 @@ from backend.app.modules.sync.schemas import (
 class SyncService:
     _HISTORICAL_DATASETS: tuple[tuple[SyncDataset, str], ...] = (
         (SyncDataset.SALES, 'Продажи'),
+        (SyncDataset.SALES_FUNNEL, 'Заказы'),
         (SyncDataset.ADVERTS_SNAPSHOT, 'Реклама'),
         (SyncDataset.ADVERTS_COST, 'Расходы рекламы'),
         (SyncDataset.ACCEPTANCE, 'Приёмка'),
@@ -47,6 +48,7 @@ class SyncService:
         ('supplies', 'Поставки'),
     )
     _GAP_FILL_DATASETS: tuple[SyncDataset, ...] = (
+        SyncDataset.SALES_FUNNEL,
         SyncDataset.ADVERTS_COST,
         SyncDataset.ACCEPTANCE,
         SyncDataset.STORAGE,
