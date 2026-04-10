@@ -1,8 +1,7 @@
 <template>
   <header class="topbar">
     <div class="topbar-brand">
-      <span class="topbar-brand-wb">WB</span>
-      <span class="topbar-brand-partners">Analytics</span>
+      <span class="topbar-brand-title">МАРЖИНО</span>
     </div>
 
     <nav class="topbar-nav" aria-label="Основная навигация">
@@ -74,12 +73,10 @@ const navItems = computed(() => {
   const accountQuery = props.selectedAccountId ? { account_id: props.selectedAccountId } : undefined
 
   return [
-    { label: 'Проблемные товары', to: { path: '/economics/problems', query: accountQuery }, authOnly: true },
     { label: 'Полная аналитика', to: { path: '/economics', query: accountQuery }, authOnly: true },
     { label: 'Остатки', to: { path: '/stocks', query: accountQuery }, authOnly: true },
     { label: 'Поставки', to: { path: '/supplies', query: accountQuery }, authOnly: true },
     { label: 'Загрузка данных', to: { path: '/sync', query: accountQuery }, authOnly: true },
-    { label: 'Список аккаунтов', to: { path: '/accounts' }, authOnly: true },
     { label: 'Регистрация', to: { path: '/register' }, authOnly: false },
   ]
 })
