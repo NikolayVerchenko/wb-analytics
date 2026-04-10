@@ -54,7 +54,7 @@
       </div>
 
       <p class="sync-helper-text">
-        Выберите кабинет, а для истории ещё и период. Дальше запускайте загрузку из нужной вкладки ниже.
+        Выберите кабинет. Во вкладке История догружаются только отстающие периоды относительно продаж, а полный период нужен только для технического режима.
       </p>
 
       <div v-if="createError" class="message message-error">{{ createError }}</div>
@@ -146,6 +146,7 @@
       :primary-action-loading-label="primaryActionLoadingLabel"
       :primary-action-disabled="primaryActionDisabled"
       @primary-action="handlePrimaryAction"
+      @history-gap-fill="handleHistoryGapFill"
     />
 
     <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
@@ -174,7 +175,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getAccounts } from '../api/accounts'
 import SyncCoverageOverview from '../components/SyncCoverageOverview.vue'
 import SyncJobProgress from '../components/SyncJobProgress.vue'
-import type { SyncJobStatus } from '../types/sync'
+import type { SyncDataset, SyncJobStatus } from '../types/sync'
 import { useSyncJob } from '../composables/useSyncJob'
 import type { Account } from '../types/account'
 
@@ -203,6 +204,7 @@ const {
   restartError,
   createJob,
   continueJob,
+  fillMissingHistory,
   loadJobDetails,
   loadCoverage,
   retryFailedJob,
@@ -235,10 +237,10 @@ const currentAccountTitle = computed(() => {
 })
 const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
 const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
-const showDateRangeFields = computed(() => selectedCoverageTab.value === 'overview' || selectedCoverageTab.value === 'historical')
+const showDateRangeFields = computed(() => selectedCoverageTab.value === 'overview')
 const primaryActionLabel = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
-    return 'Догрузить историю'
+    return 'Догрузить всё отставание'
   }
   if (selectedCoverageTab.value === 'operational') {
     return 'Обновить текущую неделю'
@@ -249,6 +251,9 @@ const primaryActionLabel = computed(() => {
   return 'Обновить данные'
 })
 const primaryActionLoadingLabel = computed(() => {
+  if (selectedCoverageTab.value === 'historical') {
+    return 'Ищу и запускаю догрузку...'
+  }
   if (selectedCoverageTab.value === 'operational') {
     return 'Запускаю обновление недели...'
   }
@@ -261,6 +266,9 @@ const primaryActionDisabled = computed(() => {
   if (createLoading.value) {
     return true
   }
+  if (selectedCoverageTab.value === 'historical') {
+    return !form.accountId || getHistoricalGapFillDatasets().length === 0
+  }
   if (selectedCoverageTab.value === 'operational' || selectedCoverageTab.value === 'reference') {
     return !form.accountId
   }
@@ -268,7 +276,7 @@ const primaryActionDisabled = computed(() => {
 })
 const actionDescription = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
-    return 'Выберите период и запустите догрузку закрытых недель. Продажи, карточки, реклама, приёмка и хранение подтянутся внутри одной job.'
+    return 'Продажи считаются опорой истории. Если реклама, приёмка или хранение отстают, догружайте только недостающие периоды относительно sales.'
   }
   if (selectedCoverageTab.value === 'operational') {
     return 'Запустите обновление незакрытой недели, чтобы подтянуть текущие продажи, воронку и связанные оперативные данные.'
@@ -455,7 +463,56 @@ async function handlePrimaryAction() {
     await handleCreateStockSnapshotJob()
     return
   }
-  await handleCreateJob()
+  await handleFillMissingHistory()
+}
+
+function getHistoricalGapFillDatasets(): SyncDataset[] {
+  const datasets = coverage.value?.historical.datasets ?? []
+  return datasets
+    .filter((dataset) => dataset.dataset !== 'sales' && dataset.missing_periods.length > 0)
+    .map((dataset) => dataset.dataset as SyncDataset)
+}
+
+async function handleFillMissingHistory(datasets = getHistoricalGapFillDatasets()) {
+  if (!form.accountId || datasets.length === 0) {
+    return
+  }
+
+  const response = await fillMissingHistory({
+    account_id: form.accountId,
+    datasets,
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await loadCoverage(form.accountId, false)
+
+  if (!response.job_id) {
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleHistoryGapFill(dataset: string) {
+  await handleFillMissingHistory([dataset as SyncDataset])
 }
 
 async function handleContinueSalesJob() {

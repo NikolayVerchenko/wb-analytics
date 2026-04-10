@@ -547,6 +547,11 @@ td.numeric {
   color: #111827;
 }
 
+.secondary-button-compact {
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
 .sync-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -917,6 +922,8 @@ td.numeric {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+  max-height: 140px;
+  overflow: auto;
 }
 
 .sync-job-details-panel {

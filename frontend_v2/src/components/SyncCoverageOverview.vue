@@ -170,6 +170,7 @@
               <th>Последняя загрузка</th>
               <th>Объём</th>
               <th>Пробелы</th>
+              <th>Действие</th>
               <th>Комментарий</th>
             </tr>
           </thead>
@@ -188,7 +189,7 @@
               <td>
                 <template v-if="dataset.missing_periods.length">
                   <details class="sync-inline-details">
-                    <summary>{{ dataset.missing_periods.length }} пропусков</summary>
+                    <summary>Показать периоды ({{ dataset.missing_periods.length }})</summary>
                     <div class="sync-inline-details-content">
                       <span
                         v-for="period in dataset.missing_periods"
@@ -200,6 +201,18 @@
                     </div>
                   </details>
                 </template>
+                <template v-else>—</template>
+              </td>
+              <td>
+                <button
+                  v-if="showDatasetGapFillAction(dataset)"
+                  type="button"
+                  class="secondary-button secondary-button-compact"
+                  :disabled="props.createLoading"
+                  @click="emit('history-gap-fill', dataset.dataset)"
+                >
+                  {{ props.createLoading ? 'Запускаю...' : 'Догрузить' }}
+                </button>
                 <template v-else>—</template>
               </td>
               <td>{{ dataset.comment ?? '—' }}</td>
@@ -234,6 +247,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:activeTab', value: CoverageTab): void
   (e: 'primary-action'): void
+  (e: 'history-gap-fill', dataset: string): void
 }>()
 
 const activeTab = computed<CoverageTab>({
@@ -342,6 +356,10 @@ function formatDateTime(value: string | null | undefined): string {
     return value
   }
   return date.toLocaleString('ru-RU')
+}
+
+function showDatasetGapFillAction(dataset: SyncCoverageDataset): boolean {
+  return activeTab.value === 'historical' && dataset.dataset !== 'sales' && dataset.missing_periods.length > 0
 }
 
 function buildSummaryMeta(datasets: SyncCoverageDataset[]): string {

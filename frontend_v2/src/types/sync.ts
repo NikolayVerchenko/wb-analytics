@@ -1,4 +1,4 @@
-export type SyncJobType = 'initial_sales_backfill' | 'sales_funnel_backfill' | 'stock_snapshot_refresh' | 'open_week_refresh'
+export type SyncJobType = 'initial_sales_backfill' | 'sales_funnel_backfill' | 'stock_snapshot_refresh' | 'open_week_refresh' | 'history_gap_fill'
 export type SyncMode = 'daily' | 'weekly'
 export type SyncDataset = 'sales' | 'cards' | 'adverts_snapshot' | 'adverts_cost' | 'acceptance' | 'storage' | 'sales_funnel' | 'warehouse_remains'
 export type SyncJobStatus = 'pending' | 'running' | 'success' | 'partial_success' | 'failed' | 'cancelled'
@@ -21,6 +21,19 @@ export type SyncJobRunRequest = {
 export type SyncJobCreateResponse = {
   job_id: string
   status: SyncJobStatus
+}
+
+export type SyncHistoryGapFillRequest = {
+  account_id: string
+  datasets: SyncDataset[]
+}
+
+export type SyncHistoryGapFillResponse = {
+  job_id: string | null
+  status: 'pending' | 'noop'
+  message: string | null
+  datasets: SyncDataset[]
+  planned_steps: number
 }
 
 export type SyncJob = {

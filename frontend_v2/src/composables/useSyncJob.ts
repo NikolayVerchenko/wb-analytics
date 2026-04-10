@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { cancelSyncJob, continueSyncJob, createSyncJob, getSyncCoverage, getSyncJob, restartSyncJob, resumeReadySyncJob, retryFailedSyncJob, runSyncJob } from '../api/sync'
-import type { SyncCoverageResponse, SyncJobCreate, SyncJobDetailsResponse } from '../types/sync'
+import { cancelSyncJob, continueSyncJob, createSyncJob, fillMissingHistorySync, getSyncCoverage, getSyncJob, restartSyncJob, resumeReadySyncJob, retryFailedSyncJob, runSyncJob } from '../api/sync'
+import type { SyncCoverageResponse, SyncHistoryGapFillRequest, SyncJobCreate, SyncJobDetailsResponse } from '../types/sync'
 
 export function useSyncJob() {
   const jobDetails = ref<SyncJobDetailsResponse | null>(null)
@@ -176,6 +176,27 @@ export function useSyncJob() {
     }
   }
 
+  async function fillMissingHistory(payload: SyncHistoryGapFillRequest) {
+    createLoading.value = true
+    createError.value = ''
+    createSuccessMessage.value = ''
+    conflictJobId.value = ''
+
+    try {
+      const response = await fillMissingHistorySync(payload)
+      createSuccessMessage.value = response.status === 'noop'
+        ? (response.message || 'Отставания относительно продаж не найдено.')
+        : `Job догрузки создана: ${response.job_id}`
+      return response
+    } catch (error) {
+      createError.value = error instanceof Error ? error.message : 'Не удалось догрузить исторические данные.'
+      conflictJobId.value = extractConflictJobId(createError.value)
+      return null
+    } finally {
+      createLoading.value = false
+    }
+  }
+
   async function runJob(jobId: string, maxSteps = 1) {
     if (!jobId) {
       return null
@@ -306,6 +327,7 @@ export function useSyncJob() {
     restartError,
     createJob,
     continueJob,
+    fillMissingHistory,
     loadJobDetails,
     loadCoverage,
     runJob,

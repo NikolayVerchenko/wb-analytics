@@ -1,5 +1,13 @@
 import { apiGet, apiPost } from './http'
-import type { SyncCoverageResponse, SyncJobCreate, SyncJobCreateResponse, SyncJobDetailsResponse, SyncJobRunRequest } from '../types/sync'
+import type {
+  SyncCoverageResponse,
+  SyncHistoryGapFillRequest,
+  SyncHistoryGapFillResponse,
+  SyncJobCreate,
+  SyncJobCreateResponse,
+  SyncJobDetailsResponse,
+  SyncJobRunRequest,
+} from '../types/sync'
 
 export function getSyncCoverage(accountId: string): Promise<SyncCoverageResponse> {
   return apiGet<SyncCoverageResponse>(`/api/sync/coverage?account_id=${encodeURIComponent(accountId)}`)
@@ -7,6 +15,10 @@ export function getSyncCoverage(accountId: string): Promise<SyncCoverageResponse
 
 export function createSyncJob(payload: SyncJobCreate): Promise<SyncJobCreateResponse> {
   return apiPost<SyncJobCreateResponse, SyncJobCreate>('/api/sync/jobs', payload)
+}
+
+export function fillMissingHistorySync(payload: SyncHistoryGapFillRequest): Promise<SyncHistoryGapFillResponse> {
+  return apiPost<SyncHistoryGapFillResponse, SyncHistoryGapFillRequest>('/api/sync/history/fill-missing', payload)
 }
 
 export function continueSyncJob(payload: SyncJobCreate): Promise<SyncJobCreateResponse> {
