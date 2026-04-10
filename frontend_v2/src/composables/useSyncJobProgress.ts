@@ -236,7 +236,7 @@ function formatDatasetLabel(dataset: SyncDataset): string {
     adverts_cost: 'Расходы рекламы',
     acceptance: 'Приёмка',
     storage: 'Хранение',
-    sales_funnel: 'Воронка',
+    sales_funnel: 'Заказы',
     warehouse_remains: 'Остатки',
   }
 

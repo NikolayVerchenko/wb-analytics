@@ -1190,7 +1190,18 @@ class SyncService:
         weekly_ranges: list[tuple[date, date]],
         datasets: list[SyncDataset],
     ) -> list[tuple[date, date, list[SyncDataset]]]:
-        weekly_datasets = [dataset for dataset in datasets if dataset in {SyncDataset.SALES, SyncDataset.ADVERTS_COST, SyncDataset.ACCEPTANCE, SyncDataset.STORAGE, SyncDataset.WAREHOUSE_REMAINS}]
+        weekly_datasets = [
+            dataset
+            for dataset in datasets
+            if dataset in {
+                SyncDataset.SALES,
+                SyncDataset.SALES_FUNNEL,
+                SyncDataset.ADVERTS_COST,
+                SyncDataset.ACCEPTANCE,
+                SyncDataset.STORAGE,
+                SyncDataset.WAREHOUSE_REMAINS,
+            }
+        ]
         return [
             (period_from, period_to, list(weekly_datasets))
             for period_from, period_to in weekly_ranges
