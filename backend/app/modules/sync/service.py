@@ -47,7 +47,6 @@ class SyncService:
         ('supplies', 'Поставки'),
     )
     _GAP_FILL_DATASETS: tuple[SyncDataset, ...] = (
-        SyncDataset.ADVERTS_SNAPSHOT,
         SyncDataset.ADVERTS_COST,
         SyncDataset.ACCEPTANCE,
         SyncDataset.STORAGE,
@@ -673,6 +672,14 @@ class SyncService:
         label: str,
         active_jobs: list[dict],
     ) -> SyncCoverageDatasetRead:
+        if dataset == SyncDataset.ADVERTS_SNAPSHOT:
+            return self._build_historical_prepare_dataset(
+                account_id,
+                dataset=dataset,
+                label=label,
+                active_jobs=active_jobs,
+            )
+
         periods = self._repository.list_dataset_success_periods(
             account_id,
             dataset=dataset.value,
@@ -707,6 +714,52 @@ class SyncService:
             missing_periods=missing_periods,
             status=status,
             comment=self._build_problem_comment(last_problem=last_problem, has_gaps=bool(missing_periods)),
+        )
+
+    def _build_historical_prepare_dataset(
+        self,
+        account_id: UUID,
+        *,
+        dataset: SyncDataset,
+        label: str,
+        active_jobs: list[dict],
+    ) -> SyncCoverageDatasetRead:
+        bounds = self._repository.get_dataset_coverage_bounds(
+            account_id,
+            dataset=dataset.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        has_prepare = self._repository.has_successful_prepare_step_for_account(
+            account_id,
+            mode=SyncMode.WEEKLY.value,
+            dataset=dataset.value,
+        )
+        last_problem = self._repository.get_dataset_last_problem(
+            account_id,
+            dataset=dataset.value,
+            mode=SyncMode.WEEKLY.value,
+        )
+        is_loading = self._has_active_job(active_jobs, mode=SyncMode.WEEKLY, dataset=dataset)
+        status = self._resolve_dataset_status(
+            has_data=has_prepare or bounds is not None,
+            is_loading=is_loading,
+            has_problem=last_problem is not None,
+            has_gaps=False,
+            is_stale=False,
+        )
+        return SyncCoverageDatasetRead(
+            dataset=dataset.value,
+            label=label,
+            loaded_from=bounds['loaded_from'] if bounds is not None else None,
+            loaded_to=bounds['loaded_to'] if bounds is not None else None,
+            last_success_at=bounds['last_success_at'] if bounds is not None else None,
+            has_gaps=False,
+            missing_periods=[],
+            status=status,
+            comment=(
+                self._build_problem_comment(last_problem=last_problem, has_gaps=False)
+                or 'Снапшот кампаний обновляется целиком, без понедельной догрузки.'
+            ),
         )
 
     def _build_operational_dataset(
@@ -1031,7 +1084,7 @@ class SyncService:
         if any(dataset not in allowed for dataset in unique):
             raise HTTPException(
                 status_code=400,
-                detail='Gap-fill поддерживает только adverts_snapshot, adverts_cost, acceptance и storage.',
+                detail='Gap-fill поддерживает только adverts_cost, acceptance и storage.',
             )
         return unique
 
