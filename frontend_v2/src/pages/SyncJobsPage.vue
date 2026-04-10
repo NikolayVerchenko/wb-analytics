@@ -468,8 +468,27 @@ async function handlePrimaryAction() {
 
 function getHistoricalGapFillDatasets(): SyncDataset[] {
   const datasets = coverage.value?.historical.datasets ?? []
+  const salesDataset = datasets.find((dataset) => dataset.dataset === 'sales')
+  const anchorFrom = salesDataset?.loaded_from
+  const anchorTo = salesDataset?.loaded_to
+
   return datasets
-    .filter((dataset) => dataset.dataset !== 'sales' && dataset.missing_periods.length > 0)
+    .filter((dataset) => {
+      if (!anchorFrom || !anchorTo) {
+        return false
+      }
+      if (!['adverts_cost', 'acceptance', 'storage'].includes(dataset.dataset)) {
+        return false
+      }
+      if (!dataset.loaded_from || !dataset.loaded_to) {
+        return true
+      }
+      return !(
+        dataset.loaded_from <= anchorFrom &&
+        dataset.loaded_to >= anchorTo &&
+        dataset.missing_periods.length === 0
+      )
+    })
     .map((dataset) => dataset.dataset as SyncDataset)
 }
 

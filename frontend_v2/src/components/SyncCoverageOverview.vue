@@ -21,10 +21,10 @@
       >
         <span class="sync-coverage-summary-title">История</span>
         <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.historical.status">
-          {{ formatSectionStatus(coverage.historical.status) }}
+          {{ formatSectionStatus(coverage.historical.status, 'historical') }}
         </span>
         <span class="sync-coverage-summary-meta">
-          {{ buildSummaryMeta(coverage.historical.datasets) }}
+          {{ buildSummaryMeta(coverage.historical.datasets, 'historical') }}
         </span>
       </button>
 
@@ -99,9 +99,9 @@
         <article class="sync-coverage-overview-card">
           <strong>Исторические данные</strong>
           <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.historical.status">
-            {{ formatSectionStatus(coverage.historical.status) }}
+            {{ formatSectionStatus(coverage.historical.status, 'historical') }}
           </span>
-          <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.historical.datasets) }}</p>
+          <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.historical.datasets, 'historical') }}</p>
         </article>
         <article class="sync-coverage-overview-card">
           <strong>Оперативные данные</strong>
@@ -154,15 +154,26 @@
             {{ props.createLoading ? props.primaryActionLoadingLabel : props.primaryActionLabel }}
           </button>
           <span class="sync-status-pill" :data-status="currentSection.status">
-            {{ formatSectionStatus(currentSection.status) }}
+            {{ formatSectionStatus(currentSection.status, activeTab) }}
           </span>
         </div>
+      </div>
+
+      <div v-if="activeTab === 'historical'" class="message message-info">
+        <strong>{{ historicalReady ? 'История загружена полностью.' : 'История загружена не полностью.' }}</strong>
+        <div>{{ historicalSummaryText }}</div>
       </div>
 
       <div class="sync-coverage-table-wrapper">
         <table class="sync-coverage-table">
           <thead>
-            <tr>
+            <tr v-if="activeTab === 'historical'">
+              <th>Набор данных</th>
+              <th>Состояние</th>
+              <th>Последняя загрузка</th>
+              <th>Что сделать</th>
+            </tr>
+            <tr v-else>
               <th>Набор данных</th>
               <th>Статус</th>
               <th>С</th>
@@ -177,6 +188,30 @@
           <tbody>
             <tr v-for="dataset in currentSection.datasets" :key="`${activeTab}:${dataset.dataset}`">
               <td><strong>{{ dataset.label }}</strong></td>
+              <template v-if="activeTab === 'historical'">
+                <td>
+                  <span
+                    class="sync-status-pill sync-status-pill-small"
+                    :data-status="isHistoricalDatasetReady(dataset) ? 'actual' : 'partial'"
+                  >
+                    {{ isHistoricalDatasetReady(dataset) ? 'Все загружено' : 'Не все загружено' }}
+                  </span>
+                </td>
+                <td>{{ formatDateTime(dataset.last_success_at) }}</td>
+                <td>
+                  <button
+                    v-if="showDatasetGapFillAction(dataset)"
+                    type="button"
+                    class="secondary-button secondary-button-compact"
+                    :disabled="props.createLoading"
+                    @click="emit('history-gap-fill', dataset.dataset)"
+                  >
+                    {{ props.createLoading ? 'Запускаю...' : 'Догрузить' }}
+                  </button>
+                  <template v-else>—</template>
+                </td>
+              </template>
+              <template v-else>
               <td>
                 <span class="sync-status-pill sync-status-pill-small" :data-status="dataset.status">
                   {{ formatSectionStatus(dataset.status) }}
@@ -216,10 +251,40 @@
                 <template v-else>—</template>
               </td>
               <td>{{ dataset.comment ?? '—' }}</td>
+              </template>
             </tr>
           </tbody>
         </table>
       </div>
+
+      <details v-if="activeTab === 'historical' && historicalPendingDatasets.length" class="sync-history-details">
+        <summary>Показать, чего именно не хватает</summary>
+        <div class="sync-history-details-body">
+          <article
+            v-for="dataset in historicalPendingDatasets"
+            :key="`historical-detail:${dataset.dataset}`"
+            class="sync-history-detail-card"
+          >
+            <strong>{{ dataset.label }}</strong>
+            <div
+              v-for="item in buildHistoricalDetails(dataset)"
+              :key="`${dataset.dataset}:${item}`"
+              class="sync-coverage-comment"
+            >
+              {{ item }}
+            </div>
+            <div v-if="dataset.missing_periods.length" class="sync-inline-periods">
+              <span
+                v-for="period in dataset.missing_periods"
+                :key="`${dataset.dataset}:${period.date_from}:${period.date_to}`"
+                class="sync-dataset-chip sync-dataset-chip-failed"
+              >
+                {{ formatPeriod(period.date_from, period.date_to) }}
+              </span>
+            </div>
+          </article>
+        </div>
+      </details>
     </section>
   </section>
 </template>
@@ -275,12 +340,32 @@ const currentSection = computed<SyncCoverageSection>(() => {
     return { status: 'empty', datasets: [] }
   }
   if (activeTab.value === 'historical') {
-    return props.coverage.historical
+    return {
+      ...props.coverage.historical,
+      datasets: getHistoricalDisplayDatasets(props.coverage.historical.datasets),
+    }
   }
   if (activeTab.value === 'operational') {
     return props.coverage.operational
   }
   return props.coverage.reference_data
+})
+
+const historicalAnchorDataset = computed(() =>
+  getHistoricalDisplayDatasets(props.coverage?.historical.datasets ?? []).find((dataset) => dataset.dataset === 'sales') ?? null,
+)
+
+const historicalPendingDatasets = computed(() =>
+  getHistoricalDisplayDatasets(props.coverage?.historical.datasets ?? []).filter((dataset) => !isHistoricalDatasetReady(dataset)),
+)
+
+const historicalReady = computed(() => historicalPendingDatasets.value.length === 0)
+
+const historicalSummaryText = computed(() => {
+  if (historicalReady.value) {
+    return 'Продажи и зависимые исторические данные доведены до одного покрытия.'
+  }
+  return `Не хватает: ${historicalPendingDatasets.value.map((dataset) => dataset.label).join(', ')}.`
 })
 
 const currentSectionTitle = computed(() => {
@@ -331,7 +416,13 @@ const attentionItems = computed(() => {
   )
 })
 
-function formatSectionStatus(status: SyncCoverageSectionStatus): string {
+function formatSectionStatus(
+  status: SyncCoverageSectionStatus,
+  section: CoverageTab | 'historical' | 'operational' | 'reference' = 'overview',
+): string {
+  if (section === 'historical') {
+    return status === 'actual' ? 'Все загружено' : 'Не все загружено'
+  }
   const labels: Record<SyncCoverageSectionStatus, string> = {
     actual: 'Актуально',
     partial: 'Частично',
@@ -359,10 +450,17 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function showDatasetGapFillAction(dataset: SyncCoverageDataset): boolean {
-  return activeTab.value === 'historical' && dataset.dataset !== 'sales' && dataset.missing_periods.length > 0
+  return activeTab.value === 'historical' && isGapFillEligible(dataset) && !isHistoricalDatasetReady(dataset)
 }
 
-function buildSummaryMeta(datasets: SyncCoverageDataset[]): string {
+function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab | 'historical' | 'operational' | 'reference' = 'overview'): string {
+  if (section === 'historical') {
+    const notReady = getHistoricalDisplayDatasets(datasets).filter((dataset) => !isHistoricalDatasetReady(dataset))
+    if (notReady.length === 0) {
+      return 'Все исторические данные доведены до продаж.'
+    }
+    return `Не хватает: ${notReady.map((dataset) => dataset.label).join(', ')}`
+  }
   const actual = datasets.filter((dataset) => dataset.status === 'actual').length
   const nonActual = datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').length
   const latestDate = datasets
@@ -379,5 +477,48 @@ function buildSummaryMeta(datasets: SyncCoverageDataset[]): string {
     return `${actual} наб. данных выглядят актуальными`
   }
   return `${nonActual} требуют внимания`
+}
+
+function isGapFillEligible(dataset: SyncCoverageDataset): boolean {
+  return ['adverts_cost', 'acceptance', 'storage'].includes(dataset.dataset)
+}
+
+function getHistoricalDisplayDatasets(datasets: SyncCoverageDataset[]): SyncCoverageDataset[] {
+  return datasets.filter((dataset) => dataset.dataset !== 'adverts_snapshot')
+}
+
+function isHistoricalDatasetReady(dataset: SyncCoverageDataset): boolean {
+  if (dataset.dataset === 'sales') {
+    return dataset.status === 'actual'
+  }
+
+  const anchor = historicalAnchorDataset.value
+  if (!anchor?.loaded_from || !anchor.loaded_to || !dataset.loaded_from || !dataset.loaded_to) {
+    return false
+  }
+
+  return dataset.loaded_from <= anchor.loaded_from && dataset.loaded_to >= anchor.loaded_to && dataset.missing_periods.length === 0
+}
+
+function buildHistoricalDetails(dataset: SyncCoverageDataset): string[] {
+  const details: string[] = []
+
+  if (dataset.loaded_from || dataset.loaded_to) {
+    details.push(`Покрытие: ${dataset.loaded_from ?? '—'} — ${dataset.loaded_to ?? '—'}.`)
+  }
+
+  if (dataset.dataset === 'sales') {
+    details.push('Продажи используются как опорный набор для проверки полноты истории.')
+  }
+
+  if (!isHistoricalDatasetReady(dataset) && dataset.dataset !== 'sales') {
+    details.push('Этот набор ещё не доведён до покрытия продаж.')
+  }
+
+  if (dataset.comment) {
+    details.push(dataset.comment)
+  }
+
+  return details
 }
 </script>

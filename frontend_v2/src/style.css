@@ -926,6 +926,45 @@ td.numeric {
   overflow: auto;
 }
 
+.sync-inline-details-content-column {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.sync-inline-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sync-history-details {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+
+.sync-history-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #111827;
+}
+
+.sync-history-details-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sync-history-detail-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
 .sync-job-details-panel {
   padding: 0;
 }
