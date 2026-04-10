@@ -16,6 +16,7 @@ REFRESH_MARTS = ROOT / 'scripts' / 'refresh_marts.py'
 REFRESH_STOCK_MARTS = ROOT / 'scripts' / 'refresh_stock_marts.py'
 STEP_THROTTLE_SECONDS = 5
 FUNNEL_STEP_THROTTLE_SECONDS = 20
+FUNNEL_DAY_THROTTLE_SECONDS = 10
 
 class SyncExecutor:
     def __init__(self, *, root: Path | None = None, python_executable: str | None = None) -> None:
@@ -580,6 +581,8 @@ class SyncExecutor:
                 current_day_iso,
             ], job_id=job_id)
             current_day += timedelta(days=1)
+            if current_day <= period_to_value:
+                time.sleep(FUNNEL_DAY_THROTTLE_SECONDS)
 
         self._set_step_phase(
             step_id,
@@ -882,5 +885,6 @@ class SyncExecutor:
             row_repository.update_step_payload(step_id, {'raw_resume': state})
             conn.commit()
             return state
+
 
 

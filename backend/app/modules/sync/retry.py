@@ -52,4 +52,6 @@ def is_retryable_error(error_message: str) -> bool:
 
 
 def _get_rate_limit_delay_seconds(attempt: int) -> int:
-    return 30
+    return min(900, 180 * max(attempt, 1))
+
+

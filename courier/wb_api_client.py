@@ -5,7 +5,8 @@ from typing import Any
 import requests
 
 
-RETRYABLE_STATUSES = {500, 502, 503, 504}
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+RATE_LIMIT_STATUSES = {429}
 
 
 class WbApiError(RuntimeError):
@@ -122,7 +123,7 @@ class WbApiClient:
                 return response
 
             if response.status_code in RETRYABLE_STATUSES and attempt <= self._max_retries:
-                self._sleep_before_retry(attempt)
+                self._sleep_before_retry(attempt, status_code=response.status_code, retry_after=response.headers.get('Retry-After'))
                 continue
 
             message = (response.text or "").strip() or f"HTTP {response.status_code}"
@@ -132,5 +133,17 @@ class WbApiClient:
             raise WbApiNetworkError(f"Network error while calling {url}: {last_error}") from last_error
         raise WbApiError(f"Request failed without response: {method} {url}")
 
-    def _sleep_before_retry(self, attempt: int) -> None:
-        time.sleep(self._backoff_seconds * attempt)
+    def _sleep_before_retry(self, attempt: int, *, status_code: int | None = None, retry_after: str | None = None) -> None:
+        delay_seconds = self._backoff_seconds * attempt
+
+        if status_code in RATE_LIMIT_STATUSES:
+            delay_seconds = max(delay_seconds, 30 * attempt)
+            if retry_after:
+                try:
+                    delay_seconds = max(delay_seconds, float(retry_after))
+                except ValueError:
+                    pass
+
+        time.sleep(delay_seconds)
+
+

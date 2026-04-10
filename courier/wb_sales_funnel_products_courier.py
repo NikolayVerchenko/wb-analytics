@@ -97,7 +97,7 @@ def run() -> int:
                 if page_rows < args.limit:
                     break
                 offset += args.limit
-                time.sleep(20)
+                time.sleep(45)
             runner.succeed(total_rows)
             return 0
         except Exception as exc:
@@ -115,3 +115,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
