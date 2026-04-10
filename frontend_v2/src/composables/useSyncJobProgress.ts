@@ -238,6 +238,7 @@ function formatDatasetLabel(dataset: SyncDataset): string {
     storage: 'Хранение',
     sales_funnel: 'Заказы',
     warehouse_remains: 'Остатки',
+    supplies: 'Поставки',
   }
 
   return labels[dataset] ?? dataset

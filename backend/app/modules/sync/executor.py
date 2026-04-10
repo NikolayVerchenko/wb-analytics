@@ -220,6 +220,9 @@ class SyncExecutor:
         if dataset == 'warehouse_remains' and mode == 'daily':
             self._process_warehouse_remains_snapshot_step(step)
             return
+        if dataset == 'supplies' and mode == 'daily':
+            self._process_supplies_snapshot_step(step)
+            return
 
         raise RuntimeError(f'Unsupported sync step: dataset={dataset} mode={mode}')
 
@@ -831,6 +834,81 @@ class SyncExecutor:
             self._run_command([
                 self._python_executable,
                 str(REFRESH_STOCK_MARTS),
+            ], job_id=job_id)
+
+    def _process_supplies_snapshot_step(self, step: dict) -> None:
+        step_id = UUID(str(step['step_id']))
+        account_id = str(step['account_id'])
+        snapshot_day = step['period_to'].isoformat()
+        payload_json = step.get('payload_json') or {}
+        job_id = UUID(str(step['job_id']))
+
+        self._set_step_phase(
+            step_id,
+            phase='raw',
+            phase_label='Загружаю список поставок из WB API',
+            phase_detail=f'WB supplies API: получаю актуальный snapshot списка поставок на {snapshot_day}.',
+        )
+        self._run_command([
+            self._python_executable,
+            '-m',
+            'courier.wb_supplies_courier',
+            '--account-id',
+            account_id,
+        ], job_id=job_id)
+
+        self._set_step_phase(
+            step_id,
+            phase='core',
+            phase_label='Сохраняю список поставок в core',
+            phase_detail='Читаю raw snapshot поставок и обновляю core.supplies.',
+        )
+        self._run_command([
+            self._python_executable,
+            '-m',
+            'courier.wb_supplies_loader',
+            '--account-id',
+            account_id,
+        ], job_id=job_id)
+
+        self._set_step_phase(
+            step_id,
+            phase='raw_goods',
+            phase_label='Загружаю товары поставок из WB API',
+            phase_detail='WB supplies API: получаю состав товаров по каждой поставке из свежего snapshot списка поставок.',
+        )
+        self._run_command([
+            self._python_executable,
+            '-m',
+            'courier.wb_supply_goods_courier',
+            '--account-id',
+            account_id,
+        ], job_id=job_id)
+
+        self._set_step_phase(
+            step_id,
+            phase='core_goods',
+            phase_label='Сохраняю товары поставок в core',
+            phase_detail='Читаю raw snapshot товаров поставок и обновляю core.supply_goods.',
+        )
+        self._run_command([
+            self._python_executable,
+            '-m',
+            'courier.wb_supply_goods_loader',
+            '--account-id',
+            account_id,
+        ], job_id=job_id)
+
+        if payload_json.get('run_marts_after', True):
+            self._set_step_phase(
+                step_id,
+                phase='marts',
+                phase_label='Обновляю витрины поставок',
+                phase_detail='Пересчитываю mart.supply_items после обновления списка поставок и их товаров.',
+            )
+            self._run_command([
+                self._python_executable,
+                str(REFRESH_MARTS),
             ], job_id=job_id)
 
     def _is_job_cancelled(self, job_id: UUID) -> str | None:

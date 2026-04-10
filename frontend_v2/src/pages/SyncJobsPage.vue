@@ -197,7 +197,7 @@ const primaryActionLabel = computed(() => {
     return 'Обновить текущую неделю'
   }
   if (selectedCoverageTab.value === 'reference') {
-    return 'Обновить остатки'
+    return 'Обновить справочники'
   }
   return 'Обновить данные'
 })
@@ -209,7 +209,7 @@ const primaryActionLoadingLabel = computed(() => {
     return 'Запускаю обновление недели...'
   }
   if (selectedCoverageTab.value === 'reference') {
-    return 'Обновляю остатки...'
+    return 'Обновляю справочники...'
   }
   return 'Запускаю обновление...'
 })
@@ -230,7 +230,7 @@ const actionDescription = computed(() => {
     return 'Запустите обновление незакрытой недели, чтобы подтянуть текущие продажи, воронку и связанные оперативные данные.'
   }
   if (selectedCoverageTab.value === 'reference') {
-    return 'Обновляйте остатки отдельно. Карточки подтягиваются вместе с историей или оперативным обновлением.'
+    return 'Обновляйте справочники одним действием: остатки и поставки запускаются отсюда, а карточки подтягиваются вместе с историей или оперативным обновлением.'
   }
   return 'Сначала выберите кабинет и тип данных ниже. Для истории задайте период, для оперативных и справочных данных достаточно кабинета.'
 })
@@ -580,7 +580,7 @@ async function handleCreateStockSnapshotJob() {
     mode: 'daily',
     date_from: snapshotDate,
     date_to: snapshotDate,
-    datasets: ['warehouse_remains'],
+    datasets: ['warehouse_remains', 'supplies'],
   })
 
   if (!response) {

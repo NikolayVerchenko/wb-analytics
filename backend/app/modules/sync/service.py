@@ -342,21 +342,22 @@ class SyncService:
     def _create_stock_snapshot_job(self, payload: SyncJobCreate) -> SyncJobCreateResponse:
         effective_datasets = self._normalize_stock_snapshot_datasets(payload.datasets)
 
-        active_job = self._repository.get_active_job_for_account(
-            payload.account_id,
-            mode=payload.mode.value,
-            dataset=SyncDataset.WAREHOUSE_REMAINS.value,
-        )
-        if active_job is not None:
-            return SyncJobCreateResponse(
-                job_id=active_job['job_id'],
-                status=SyncJobStatus(active_job['status']),
+        for dataset in effective_datasets:
+            active_job = self._repository.get_active_job_for_account(
+                payload.account_id,
+                mode=payload.mode.value,
+                dataset=dataset.value,
             )
+            if active_job is not None:
+                return SyncJobCreateResponse(
+                    job_id=active_job['job_id'],
+                    status=SyncJobStatus(active_job['status']),
+                )
 
         snapshot_day = payload.date_to
         return self._create_job_with_plan(
             payload=payload,
-            weekly_step_plan=[(snapshot_day, snapshot_day, [SyncDataset.WAREHOUSE_REMAINS])],
+            weekly_step_plan=[(snapshot_day, snapshot_day, effective_datasets)],
             datasets=effective_datasets,
             include_cards_prepare=False,
             include_adverts_snapshot_prepare=False,
@@ -594,8 +595,8 @@ class SyncService:
                     payload_json={
                         'job_type': payload.job_type.value,
                         'mode': payload.mode.value,
-                        'step_type': 'snapshot' if weekly_dataset == SyncDataset.WAREHOUSE_REMAINS else 'open_week_dataset' if payload.job_type == SyncJobType.OPEN_WEEK_REFRESH else 'weekly_dataset',
-                        'run_marts_after': weekly_dataset == SyncDataset.WAREHOUSE_REMAINS or weekly_dataset == SyncDataset.STORAGE or (weekly_dataset == SyncDataset.ACCEPTANCE and SyncDataset.STORAGE not in weekly_datasets) or (weekly_dataset == SyncDataset.ADVERTS_COST and SyncDataset.ACCEPTANCE not in weekly_datasets and SyncDataset.STORAGE not in weekly_datasets) or (weekly_dataset == SyncDataset.SALES_FUNNEL and period_to == payload.date_to) or (weekly_dataset == SyncDataset.SALES and SyncDataset.SALES_FUNNEL not in datasets and SyncDataset.ADVERTS_COST not in weekly_datasets and SyncDataset.ACCEPTANCE not in weekly_datasets and SyncDataset.STORAGE not in weekly_datasets),
+                        'step_type': 'snapshot' if weekly_dataset in {SyncDataset.WAREHOUSE_REMAINS, SyncDataset.SUPPLIES} else 'open_week_dataset' if payload.job_type == SyncJobType.OPEN_WEEK_REFRESH else 'weekly_dataset',
+                        'run_marts_after': weekly_dataset in {SyncDataset.WAREHOUSE_REMAINS, SyncDataset.SUPPLIES, SyncDataset.STORAGE} or (weekly_dataset == SyncDataset.ACCEPTANCE and SyncDataset.STORAGE not in weekly_datasets) or (weekly_dataset == SyncDataset.ADVERTS_COST and SyncDataset.ACCEPTANCE not in weekly_datasets and SyncDataset.STORAGE not in weekly_datasets) or (weekly_dataset == SyncDataset.SALES_FUNNEL and period_to == payload.date_to) or (weekly_dataset == SyncDataset.SALES and SyncDataset.SALES_FUNNEL not in datasets and SyncDataset.ADVERTS_COST not in weekly_datasets and SyncDataset.ACCEPTANCE not in weekly_datasets and SyncDataset.STORAGE not in weekly_datasets),
                         'restart_from_progress': True,
                     },
                 )
@@ -824,8 +825,8 @@ class SyncService:
             mode = SyncMode.DAILY
         else:
             snapshot = self._repository.get_supplies_snapshot(account_id)
-            source_dataset = None
-            mode = None
+            source_dataset = SyncDataset.SUPPLIES
+            mode = SyncMode.DAILY
 
         last_problem = None
         is_loading = False
@@ -881,7 +882,7 @@ class SyncService:
         dataset = (
             SyncDataset.SALES_FUNNEL.value
             if job_row['job_type'] == SyncJobType.SALES_FUNNEL_BACKFILL.value
-            else SyncDataset.WAREHOUSE_REMAINS.value if job_row['job_type'] == SyncJobType.STOCK_SNAPSHOT_REFRESH.value else None
+            else None
         )
         executor.execute_job_until_done(job_id=job_id, dataset=dataset, max_steps=max_steps)
 
@@ -917,7 +918,7 @@ class SyncService:
         step_rows = self._repository.list_job_steps(job_id)
         weekly_step_datasets: dict[tuple[date, date], list[SyncDataset]] = {}
         for step in step_rows:
-            if step['dataset'] not in {SyncDataset.SALES.value, SyncDataset.SALES_FUNNEL.value, SyncDataset.ADVERTS_COST.value, SyncDataset.ACCEPTANCE.value, SyncDataset.STORAGE.value, SyncDataset.WAREHOUSE_REMAINS.value}:
+            if step['dataset'] not in {SyncDataset.SALES.value, SyncDataset.SALES_FUNNEL.value, SyncDataset.ADVERTS_COST.value, SyncDataset.ACCEPTANCE.value, SyncDataset.STORAGE.value, SyncDataset.WAREHOUSE_REMAINS.value, SyncDataset.SUPPLIES.value}:
                 continue
             if step['status'] == SyncJobStepStatus.SUCCESS.value:
                 continue
@@ -1158,10 +1159,10 @@ class SyncService:
 
     def _normalize_stock_snapshot_datasets(self, datasets: list[SyncDataset]) -> list[SyncDataset]:
         unique = list(dict.fromkeys(datasets))
-        allowed = {SyncDataset.WAREHOUSE_REMAINS}
+        allowed = {SyncDataset.WAREHOUSE_REMAINS, SyncDataset.SUPPLIES}
         if not unique or any(dataset not in allowed for dataset in unique):
-            raise HTTPException(status_code=400, detail='Stock snapshot refresh supports only warehouse_remains dataset')
-        return [SyncDataset.WAREHOUSE_REMAINS]
+            raise HTTPException(status_code=400, detail='Reference refresh supports only warehouse_remains and supplies datasets')
+        return unique
 
     def _normalize_open_week_datasets(self, datasets: list[SyncDataset]) -> list[SyncDataset]:
         unique = list(dict.fromkeys(datasets))

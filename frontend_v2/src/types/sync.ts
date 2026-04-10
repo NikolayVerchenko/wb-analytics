@@ -1,6 +1,6 @@
 export type SyncJobType = 'initial_sales_backfill' | 'sales_funnel_backfill' | 'stock_snapshot_refresh' | 'open_week_refresh' | 'history_gap_fill'
 export type SyncMode = 'daily' | 'weekly'
-export type SyncDataset = 'sales' | 'cards' | 'adverts_snapshot' | 'adverts_cost' | 'acceptance' | 'storage' | 'sales_funnel' | 'warehouse_remains'
+export type SyncDataset = 'sales' | 'cards' | 'adverts_snapshot' | 'adverts_cost' | 'acceptance' | 'storage' | 'sales_funnel' | 'warehouse_remains' | 'supplies'
 export type SyncJobStatus = 'pending' | 'running' | 'success' | 'partial_success' | 'failed' | 'cancelled'
 export type SyncJobStepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
 export type SyncCoverageSectionStatus = 'actual' | 'partial' | 'stale' | 'loading' | 'error' | 'empty'

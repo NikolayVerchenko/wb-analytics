@@ -28,6 +28,7 @@ class SyncDataset(str, Enum):
     STORAGE = "storage"
     SALES_FUNNEL = "sales_funnel"
     WAREHOUSE_REMAINS = "warehouse_remains"
+    SUPPLIES = "supplies"
 
 
 class SyncJobStatus(str, Enum):
