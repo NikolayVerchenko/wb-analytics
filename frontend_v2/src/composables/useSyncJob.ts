@@ -210,7 +210,7 @@ export function useSyncJob() {
       jobDetails.value = response
 
       if (response.job.status !== 'success' && response.job.status !== 'failed' && response.job.status !== 'partial_success' && response.job.status !== 'cancelled') {
-        startPolling(jobId)
+        startPolling(jobId, response.job.account_id)
       }
 
       return response
@@ -233,7 +233,7 @@ export function useSyncJob() {
     try {
       const response = await retryFailedSyncJob(jobId)
       jobDetails.value = response
-      startPolling(jobId)
+      startPolling(jobId, response.job.account_id)
       return response
     } catch (error) {
       retryFailedError.value = error instanceof Error ? error.message : 'Не удалось повторно запустить ошибочные недели.'
@@ -288,7 +288,7 @@ export function useSyncJob() {
     return match ? match[1] : ''
   }
 
-  function startPolling(jobId: string) {
+  function startPolling(jobId: string, accountId?: string | null) {
     stopPolling()
 
     if (!jobId) {
@@ -300,7 +300,13 @@ export function useSyncJob() {
         return
       }
 
-      void loadJobDetails(jobId, false)
+      void (async () => {
+        const response = await loadJobDetails(jobId, false)
+        const resolvedAccountId = accountId || response?.job.account_id || jobDetails.value?.job.account_id
+        if (resolvedAccountId) {
+          await loadCoverage(resolvedAccountId, false)
+        }
+      })()
     }, 5000)
   }
 

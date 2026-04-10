@@ -612,7 +612,7 @@ async function handleRetryFailed(targetJobId: string) {
   }
 
   await loadCurrentJob(targetJobId)
-  startPolling(targetJobId)
+  startPolling(targetJobId, form.accountId)
 }
 
 async function handleCancelJob(targetJobId: string) {
@@ -657,7 +657,7 @@ watch(
       if (form.accountId) {
         await loadCoverage(form.accountId, false)
       }
-      startPolling(value)
+        startPolling(value, form.accountId)
       return
     }
 
