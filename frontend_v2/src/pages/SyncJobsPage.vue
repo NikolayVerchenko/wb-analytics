@@ -20,13 +20,12 @@
         </div>
 
         <div v-if="showDateRangeFields" class="field">
-          <label for="sync-date-from">Дата от</label>
-          <input id="sync-date-from" v-model="form.dateFrom" type="date" />
-        </div>
-
-        <div v-if="showDateRangeFields" class="field">
-          <label for="sync-date-to">Дата до</label>
-          <input id="sync-date-to" v-model="form.dateTo" type="date" />
+          <label>Период</label>
+          <PeriodFilter
+            :date-from="form.dateFrom"
+            :date-to="form.dateTo"
+            @apply="handlePeriodApply"
+          />
         </div>
       </div>
 
@@ -173,6 +172,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getAccounts } from '../api/accounts'
+import PeriodFilter from '../components/PeriodFilter.vue'
 import SyncCoverageOverview from '../components/SyncCoverageOverview.vue'
 import SyncJobProgress from '../components/SyncJobProgress.vue'
 import type { SyncDataset, SyncJobStatus } from '../types/sync'
@@ -312,6 +312,11 @@ function getTodayDate(): string {
 
 function getAccountTitle(account: Account): string {
   return account.seller_name || account.name || 'Без названия'
+}
+
+function handlePeriodApply(period: { date_from: string; date_to: string }) {
+  form.dateFrom = period.date_from
+  form.dateTo = period.date_to
 }
 
 function formatJobStatus(status: SyncJobStatus): string {
