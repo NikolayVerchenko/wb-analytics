@@ -20,8 +20,8 @@
         @click="activeTab = 'historical'"
       >
         <span class="sync-coverage-summary-title">История</span>
-        <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.historical.status">
-          {{ formatSectionStatus(coverage.historical.status, 'historical') }}
+        <span class="sync-status-pill sync-status-pill-small" :data-status="historicalUiStatus">
+          {{ formatSectionStatus(historicalUiStatus, 'historical') }}
         </span>
         <span class="sync-coverage-summary-meta">
           {{ buildSummaryMeta(coverage.historical.datasets, 'historical') }}
@@ -98,8 +98,8 @@
       <div class="sync-coverage-overview-grid">
         <article class="sync-coverage-overview-card">
           <strong>Исторические данные</strong>
-          <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.historical.status">
-            {{ formatSectionStatus(coverage.historical.status, 'historical') }}
+          <span class="sync-status-pill sync-status-pill-small" :data-status="historicalUiStatus">
+            {{ formatSectionStatus(historicalUiStatus, 'historical') }}
           </span>
           <p class="sync-coverage-comment">{{ buildSummaryMeta(coverage.historical.datasets, 'historical') }}</p>
         </article>
@@ -153,14 +153,15 @@
           >
             {{ props.createLoading ? props.primaryActionLoadingLabel : props.primaryActionLabel }}
           </button>
-          <span class="sync-status-pill" :data-status="currentSection.status">
-            {{ formatSectionStatus(currentSection.status, activeTab) }}
+          <span class="sync-status-pill" :data-status="currentSectionUiStatus">
+            {{ formatSectionStatus(currentSectionUiStatus, activeTab) }}
           </span>
         </div>
       </div>
 
       <div v-if="activeTab === 'historical'" class="message message-info">
         <strong>{{ historicalReady ? 'История загружена полностью.' : 'История загружена не полностью.' }}</strong>
+        <div><strong>Период в базе:</strong> {{ historicalCoveragePeriod }}</div>
         <div>{{ historicalSummaryText }}</div>
       </div>
 
@@ -361,6 +362,28 @@ const historicalPendingDatasets = computed(() =>
 
 const historicalReady = computed(() => historicalPendingDatasets.value.length === 0)
 
+const historicalUiStatus = computed<SyncCoverageSectionStatus>(() => {
+  if (!historicalAnchorDataset.value?.loaded_from || !historicalAnchorDataset.value?.loaded_to) {
+    return 'empty'
+  }
+  return historicalReady.value ? 'actual' : 'partial'
+})
+
+const currentSectionUiStatus = computed<SyncCoverageSectionStatus>(() => {
+  if (activeTab.value === 'historical') {
+    return historicalUiStatus.value
+  }
+  return currentSection.value.status
+})
+
+const historicalCoveragePeriod = computed(() => {
+  const anchor = historicalAnchorDataset.value
+  if (!anchor?.loaded_from || !anchor.loaded_to) {
+    return 'ещё не определён'
+  }
+  return `${anchor.loaded_from} — ${anchor.loaded_to}`
+})
+
 const historicalSummaryText = computed(() => {
   if (historicalReady.value) {
     return 'Продажи и зависимые исторические данные доведены до одного покрытия.'
@@ -456,10 +479,11 @@ function showDatasetGapFillAction(dataset: SyncCoverageDataset): boolean {
 function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab | 'historical' | 'operational' | 'reference' = 'overview'): string {
   if (section === 'historical') {
     const notReady = getHistoricalDisplayDatasets(datasets).filter((dataset) => !isHistoricalDatasetReady(dataset))
+    const period = historicalCoveragePeriod.value
     if (notReady.length === 0) {
-      return 'Все исторические данные доведены до продаж.'
+      return `В базе: ${period}. Все исторические данные доведены до продаж.`
     }
-    return `Не хватает: ${notReady.map((dataset) => dataset.label).join(', ')}`
+    return `В базе: ${period}. Не хватает: ${notReady.map((dataset) => dataset.label).join(', ')}`
   }
   const actual = datasets.filter((dataset) => dataset.status === 'actual').length
   const nonActual = datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').length
