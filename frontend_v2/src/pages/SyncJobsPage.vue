@@ -34,7 +34,7 @@
           type="button"
           class="secondary-button"
           :class="{ 'secondary-button-active': selectedCoverageTab === 'historical' }"
-          :disabled="createLoading || !form.accountId || getHistoricalGapFillDatasets().length === 0"
+          :disabled="createLoading || !canSubmit"
           @click="handleTopAction('historical')"
         >
           {{ createLoading && selectedCoverageTab === 'historical' ? 'Ищу догрузку...' : 'Загрузить историю' }}
@@ -187,6 +187,7 @@ const currentAccountTitle = computed(() => {
   return account ? getAccountTitle(account) : 'Не выбран'
 })
 const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
+const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
 const showDateRangeFields = computed(() => selectedCoverageTab.value === 'historical')
 const primaryActionLabel = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
@@ -217,7 +218,7 @@ const primaryActionDisabled = computed(() => {
     return true
   }
   if (selectedCoverageTab.value === 'historical') {
-    return !form.accountId || getHistoricalGapFillDatasets().length === 0
+    return !canSubmit.value
   }
   return !form.accountId
 })
@@ -370,6 +371,72 @@ async function loadCurrentJob(targetJobId: string) {
   }
 }
 
+function getHistoricalSalesCoverage() {
+  return coverage.value?.historical.datasets.find((dataset) => dataset.dataset === 'sales') ?? null
+}
+
+function needsHistoricalSalesBackfill() {
+  const salesDataset = getHistoricalSalesCoverage()
+  if (!salesDataset?.loaded_from || !salesDataset.loaded_to) {
+    return true
+  }
+
+  return form.dateFrom < salesDataset.loaded_from || form.dateTo > salesDataset.loaded_to
+}
+
+async function handleCreateHistoryJob() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  const response = await createJob({
+    account_id: form.accountId,
+    job_type: 'initial_sales_backfill',
+    mode: 'weekly',
+    date_from: form.dateFrom,
+    date_to: form.dateTo,
+    datasets: ['sales'],
+  })
+
+  if (!response) {
+    if (conflictJobId.value) {
+      await router.replace({
+        path: '/sync',
+        query: {
+          account_id: form.accountId,
+          job_id: conflictJobId.value,
+        },
+      })
+    }
+    return
+  }
+
+  await router.replace({
+    path: '/sync',
+    query: {
+      account_id: form.accountId,
+      job_id: response.job_id,
+    },
+  })
+}
+
+async function handleHistoricalAction() {
+  if (needsHistoricalSalesBackfill()) {
+    await handleCreateHistoryJob()
+    return
+  }
+
+  const datasets = getHistoricalGapFillDatasets()
+  if (datasets.length > 0) {
+    await handleFillMissingHistory(datasets)
+    return
+  }
+
+  createError.value = ''
+  conflictJobId.value = ''
+  createSuccessMessage.value = 'Исторические данные уже загружены по выбранному периоду.'
+}
+
 async function handlePrimaryAction() {
   if (selectedCoverageTab.value === 'operational') {
     await handleCreateOpenWeekJob()
@@ -379,13 +446,13 @@ async function handlePrimaryAction() {
     await handleCreateStockSnapshotJob()
     return
   }
-  await handleFillMissingHistory()
+  await handleHistoricalAction()
 }
 
 async function handleTopAction(tab: CoverageTab) {
   selectedCoverageTab.value = tab
   if (tab === 'historical') {
-    await handleFillMissingHistory()
+    await handleHistoricalAction()
     return
   }
   if (tab === 'operational') {
