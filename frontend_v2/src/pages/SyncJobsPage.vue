@@ -34,27 +34,30 @@
           type="button"
           class="secondary-button"
           :class="{ 'secondary-button-active': selectedCoverageTab === 'historical' }"
-          @click="selectedCoverageTab = 'historical'"
+          :disabled="createLoading || !form.accountId || getHistoricalGapFillDatasets().length === 0"
+          @click="handleTopAction('historical')"
         >
-          История
+          {{ createLoading && selectedCoverageTab === 'historical' ? 'Ищу догрузку...' : 'Загрузить историю' }}
         </button>
 
         <button
           type="button"
           class="secondary-button"
           :class="{ 'secondary-button-active': selectedCoverageTab === 'operational' }"
-          @click="selectedCoverageTab = 'operational'"
+          :disabled="createLoading || !form.accountId"
+          @click="handleTopAction('operational')"
         >
-          Опер. данные
+          {{ createLoading && selectedCoverageTab === 'operational' ? 'Обновляю...' : 'Опер. данные' }}
         </button>
 
         <button
           type="button"
           class="secondary-button"
           :class="{ 'secondary-button-active': selectedCoverageTab === 'reference' }"
-          @click="selectedCoverageTab = 'reference'"
+          :disabled="createLoading || !form.accountId"
+          @click="handleTopAction('reference')"
         >
-          Справочники
+          {{ createLoading && selectedCoverageTab === 'reference' ? 'Обновляю...' : 'Справочники' }}
         </button>
 
         <button
@@ -80,84 +83,13 @@
       </div>
 
       <p class="sync-helper-text">
-        Выберите кабинет. Во вкладке История догружаются только отстающие периоды относительно продаж, а полный период нужен только для технического режима.
+        Выберите кабинет и запускайте нужный контур отсюда: история, оперативные данные или справочники. Период нужен только для истории.
       </p>
 
       <div v-if="createError" class="message message-error">{{ createError }}</div>
       <div v-else-if="createSuccessMessage" class="message message-info">{{ createSuccessMessage }}</div>
       <div v-if="retryFailedError" class="message message-error">{{ retryFailedError }}</div>
       <div v-if="cancelError" class="message message-error">{{ cancelError }}</div>
-      <div v-if="restartError" class="message message-error">{{ restartError }}</div>
-
-      <details class="sync-advanced-panel">
-        <summary>Технические действия</summary>
-        <div class="sync-form-actions sync-form-actions-advanced">
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="createLoading || !canSubmit"
-            @click="handleContinueSalesJob"
-          >
-            {{ createLoading ? 'Создание job...' : 'Продолжить недельные данные' }}
-          </button>
-
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="createLoading || !form.accountId"
-            @click="handleCreateOpenWeekJob"
-          >
-            {{ createLoading ? 'Создание job...' : 'Обновить незакрытую неделю' }}
-          </button>
-
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="createLoading || !canSubmit"
-            @click="handleCreateFunnelJob"
-          >
-            {{ createLoading ? 'Создание job...' : 'Загрузить воронку продаж' }}
-          </button>
-
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="createLoading || !canSubmit"
-            @click="handleContinueFunnelJob"
-          >
-            {{ createLoading ? 'Создание job...' : 'Продолжить воронку продаж' }}
-          </button>
-
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="createLoading || !form.accountId"
-            @click="handleCreateStockSnapshotJob"
-          >
-            {{ createLoading ? 'Создание job...' : 'Обновить остатки сейчас' }}
-          </button>
-
-          <button
-            v-if="jobId"
-            type="button"
-            class="secondary-button"
-            :disabled="detailsLoading"
-            @click="loadCurrentJob(jobId)"
-          >
-            Обновить статус
-          </button>
-
-          <button
-            v-if="jobId && canRestartJob"
-            type="button"
-            class="secondary-button"
-            :disabled="restartLoading"
-            @click="handleRestartJob(jobId)"
-          >
-            {{ restartLoading ? 'Продолжаю...' : 'Продолжить' }}
-          </button>
-        </div>
-      </details>
     </div>
 
     <div v-if="coverageLoading" class="message message-info">Обновляю доступность данных по кабинету...</div>
@@ -227,16 +159,12 @@ const {
   retryFailedError,
   cancelLoading,
   cancelError,
-  restartLoading,
-  restartError,
   createJob,
-  continueJob,
   fillMissingHistory,
   loadJobDetails,
   loadCoverage,
   retryFailedJob,
   cancelJob,
-  restartJob,
   startPolling,
   stopPolling,
 } = useSyncJob()
@@ -254,16 +182,11 @@ const canCancelJob = computed(() => {
   const status = jobDetails.value?.job.status
   return status === 'pending' || status === 'running'
 })
-const canRestartJob = computed(() => {
-  const status = jobDetails.value?.job.status
-  return status === 'cancelled' || status === 'failed' || status === 'partial_success'
-})
 const currentAccountTitle = computed(() => {
   const account = accounts.value.find((item) => item.account_id === form.accountId)
   return account ? getAccountTitle(account) : 'Не выбран'
 })
 const jobStatusLabel = computed(() => formatJobStatus(jobDetails.value?.job.status ?? 'pending'))
-const canSubmit = computed(() => Boolean(form.accountId && form.dateFrom && form.dateTo))
 const showDateRangeFields = computed(() => selectedCoverageTab.value === 'historical')
 const primaryActionLabel = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
@@ -296,10 +219,7 @@ const primaryActionDisabled = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
     return !form.accountId || getHistoricalGapFillDatasets().length === 0
   }
-  if (selectedCoverageTab.value === 'operational' || selectedCoverageTab.value === 'reference') {
-    return !form.accountId
-  }
-  return !canSubmit.value
+  return !form.accountId
 })
 const actionDescription = computed(() => {
   if (selectedCoverageTab.value === 'historical') {
@@ -450,42 +370,6 @@ async function loadCurrentJob(targetJobId: string) {
   }
 }
 
-async function handleCreateJob() {
-  if (!canSubmit.value) {
-    return
-  }
-
-  const response = await createJob({
-    account_id: form.accountId,
-    job_type: 'initial_sales_backfill',
-    mode: 'weekly',
-    date_from: form.dateFrom,
-    date_to: form.dateTo,
-    datasets: ['sales'],
-  })
-
-  if (!response) {
-    if (conflictJobId.value) {
-      await router.replace({
-        path: '/sync',
-        query: {
-          account_id: form.accountId,
-          job_id: conflictJobId.value,
-        },
-      })
-    }
-    return
-  }
-
-  await router.replace({
-    path: '/sync',
-    query: {
-      account_id: form.accountId,
-      job_id: response.job_id,
-    },
-  })
-}
-
 async function handlePrimaryAction() {
   if (selectedCoverageTab.value === 'operational') {
     await handleCreateOpenWeekJob()
@@ -496,6 +380,19 @@ async function handlePrimaryAction() {
     return
   }
   await handleFillMissingHistory()
+}
+
+async function handleTopAction(tab: CoverageTab) {
+  selectedCoverageTab.value = tab
+  if (tab === 'historical') {
+    await handleFillMissingHistory()
+    return
+  }
+  if (tab === 'operational') {
+    await handleCreateOpenWeekJob()
+    return
+  }
+  await handleCreateStockSnapshotJob()
 }
 
 function getHistoricalGapFillDatasets(): SyncDataset[] {
@@ -566,42 +463,6 @@ async function handleHistoryGapFill(dataset: string) {
   await handleFillMissingHistory([dataset as SyncDataset])
 }
 
-async function handleContinueSalesJob() {
-  if (!canSubmit.value) {
-    return
-  }
-
-  const response = await continueJob({
-    account_id: form.accountId,
-    job_type: 'initial_sales_backfill',
-    mode: 'weekly',
-    date_from: form.dateFrom,
-    date_to: form.dateTo,
-    datasets: ['sales'],
-  })
-
-  if (!response) {
-    if (conflictJobId.value) {
-      await router.replace({
-        path: '/sync',
-        query: {
-          account_id: form.accountId,
-          job_id: conflictJobId.value,
-        },
-      })
-    }
-    return
-  }
-
-  await router.replace({
-    path: '/sync',
-    query: {
-      account_id: form.accountId,
-      job_id: response.job_id,
-    },
-  })
-}
-
 async function handleCreateOpenWeekJob() {
   if (!form.accountId) {
     return
@@ -639,77 +500,6 @@ async function handleCreateOpenWeekJob() {
   })
 }
 
-async function handleCreateFunnelJob() {
-  if (!canSubmit.value) {
-    return
-  }
-
-  const response = await createJob({
-    account_id: form.accountId,
-    job_type: 'sales_funnel_backfill',
-    mode: 'weekly',
-    date_from: form.dateFrom,
-    date_to: form.dateTo,
-    datasets: ['sales_funnel'],
-  })
-
-  if (!response) {
-    if (conflictJobId.value) {
-      await router.replace({
-        path: '/sync',
-        query: {
-          account_id: form.accountId,
-          job_id: conflictJobId.value,
-        },
-      })
-    }
-    return
-  }
-
-  await router.replace({
-    path: '/sync',
-    query: {
-      account_id: form.accountId,
-      job_id: response.job_id,
-    },
-  })
-}
-
-async function handleContinueFunnelJob() {
-  if (!canSubmit.value) {
-    return
-  }
-
-  const response = await continueJob({
-    account_id: form.accountId,
-    job_type: 'sales_funnel_backfill',
-    mode: 'weekly',
-    date_from: form.dateFrom,
-    date_to: form.dateTo,
-    datasets: ['sales_funnel'],
-  })
-
-  if (!response) {
-    if (conflictJobId.value) {
-      await router.replace({
-        path: '/sync',
-        query: {
-          account_id: form.accountId,
-          job_id: conflictJobId.value,
-        },
-      })
-    }
-    return
-  }
-
-  await router.replace({
-    path: '/sync',
-    query: {
-      account_id: form.accountId,
-      job_id: response.job_id,
-    },
-  })
-}
 
 async function handleCreateStockSnapshotJob() {
   if (!form.accountId) {
@@ -765,21 +555,6 @@ async function handleCancelJob(targetJobId: string) {
   }
 
   await loadCurrentJob(targetJobId)
-}
-
-async function handleRestartJob(targetJobId: string) {
-  const response = await restartJob(targetJobId)
-  if (!response) {
-    return
-  }
-
-  await router.replace({
-    path: '/sync',
-    query: {
-      account_id: form.accountId,
-      job_id: response.job_id,
-    },
-  })
 }
 
 watch(
