@@ -16,14 +16,6 @@
     </nav>
 
     <div class="topbar-actions">
-      <button type="button" class="topbar-icon-button" aria-label="Поиск">⌕</button>
-      <button type="button" class="topbar-icon-button" aria-label="Сообщения">◫</button>
-      <button type="button" class="topbar-icon-button topbar-icon-badge" aria-label="Уведомления">
-        ◌
-        <span class="topbar-badge">99+</span>
-      </button>
-      <button type="button" class="topbar-icon-button" aria-label="Помощь">?</button>
-
       <div v-if="isAuthenticated && userLabel" class="topbar-user-badge">
         <span class="topbar-user-caption">Пользователь</span>
         <span class="topbar-user-name">{{ userLabel }}</span>
