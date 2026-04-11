@@ -393,9 +393,15 @@ function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab 
       ? 'Оперативные данные выглядят актуальными'
       : 'Справочники выглядят актуальными'
   }
-  return section === 'operational'
-    ? `Требуют внимания: ${datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').map((dataset) => dataset.label).join(', ')}`
-    : `Не хватает: ${datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').map((dataset) => dataset.label).join(', ')}`
+  const affected = datasets
+    .filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty')
+    .map((dataset) => dataset.label)
+    .join(', ')
+
+  if (section === 'operational') {
+    return `Требуют внимания: ${affected}`
+  }
+  return `Требуют обновления: ${affected}`
 }
 
 function isGapFillEligible(dataset: SyncCoverageDataset): boolean {

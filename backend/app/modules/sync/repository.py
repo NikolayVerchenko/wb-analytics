@@ -527,7 +527,8 @@ class SyncRepository:
                 """
                 select
                     count(distinct supply_id)::int as entity_count,
-                    max(coalesce(updated_date, supply_date, create_date, fact_date)) as last_success_at
+                    max(loaded_at) as actual_at,
+                    max(loaded_at) as last_success_at
                 from core.supplies
                 where account_id = %s
                 """,
