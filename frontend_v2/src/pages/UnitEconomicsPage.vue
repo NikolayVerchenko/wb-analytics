@@ -34,7 +34,7 @@
         :saving="taxSaving"
         :error="taxError"
         :message="taxMessage"
-        @save="saveTaxSettings"
+        @save-tax-settings="saveTaxSettings"
       />
 
       <section class="unit-econ-section">
