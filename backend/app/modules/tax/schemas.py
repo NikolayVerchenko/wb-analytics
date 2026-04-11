@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 
 class TaxSettingsRead(BaseModel):
     account_id: UUID
-    tax_rate_percent: Decimal
+    tax_rate_percent: Decimal | None = None
     tax_base: str
-    effective_from: date
-    created_at: datetime
-    updated_at: datetime
+    effective_from: date | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class TaxSettingsUpsert(BaseModel):

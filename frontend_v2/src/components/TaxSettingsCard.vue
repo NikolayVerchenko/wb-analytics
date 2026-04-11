@@ -28,7 +28,7 @@
         <button type="button" class="primary-button" :disabled="loading || saving" @click="handleSubmit">
           {{ saving ? 'Сохранение...' : 'Сохранить' }}
         </button>
-        <span class="tax-settings-hint">После сохранения витрина экономики пересчитывается в фоне.</span>
+        <span class="tax-settings-hint">После сохранения витрина экономики пересчитывается сразу.</span>
       </div>
     </div>
 

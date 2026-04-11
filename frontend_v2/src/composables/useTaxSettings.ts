@@ -40,14 +40,7 @@ export function useTaxSettings(params: { accountId: () => string }) {
       taxRatePercent.value = settings.tax_rate_percent == null ? '' : String(settings.tax_rate_percent)
       effectiveFrom.value = formatDate(settings.effective_from)
     } catch (err) {
-      const messageText = err instanceof Error ? err.message : 'Не удалось загрузить налоговую ставку.'
-      if (messageText === 'Tax settings not found') {
-        taxRatePercent.value = ''
-        effectiveFrom.value = formatDate(new Date().toISOString())
-        error.value = ''
-        return
-      }
-      error.value = messageText
+      error.value = err instanceof Error ? err.message : 'Не удалось загрузить налоговую ставку.'
     } finally {
       loading.value = false
     }
@@ -58,8 +51,9 @@ export function useTaxSettings(params: { accountId: () => string }) {
       return
     }
 
-    const rate = Number(taxRatePercent.value.replace(',', '.'))
-    if (!taxRatePercent.value.trim() || Number.isNaN(rate) || rate <= 0 || rate > 100) {
+    const rawRate = String(taxRatePercent.value ?? '').trim()
+    const rate = Number(rawRate.replace(',', '.'))
+    if (!rawRate || Number.isNaN(rate) || rate <= 0 || rate > 100) {
       error.value = 'Введите ставку налога от 0 до 100%.'
       message.value = ''
       return

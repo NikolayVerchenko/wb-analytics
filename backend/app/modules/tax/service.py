@@ -22,7 +22,14 @@ class TaxService:
         self._ensure_account_access(user_id=user_id, account_id=account_id)
         row = self._repository.get_tax_settings(account_id)
         if row is None:
-            raise HTTPException(status_code=404, detail='Tax settings not found')
+            return TaxSettingsRead(
+                account_id=account_id,
+                tax_rate_percent=None,
+                tax_base='realization_after_spp',
+                effective_from=None,
+                created_at=None,
+                updated_at=None,
+            )
         return TaxSettingsRead.model_validate(row)
 
     def upsert_tax_settings(self, user_id: UUID, account_id: UUID, payload: TaxSettingsUpsert) -> TaxSettingsRead:

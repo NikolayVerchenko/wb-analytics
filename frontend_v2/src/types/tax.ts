@@ -1,10 +1,10 @@
 export type TaxSettings = {
   account_id: string
-  tax_rate_percent: number
+  tax_rate_percent: number | null
   tax_base: string
-  effective_from: string
-  created_at: string
-  updated_at: string
+  effective_from: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export type TaxSettingsUpsert = {
