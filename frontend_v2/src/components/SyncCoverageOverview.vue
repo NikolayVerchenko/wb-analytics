@@ -36,10 +36,10 @@
       >
         <span class="sync-coverage-summary-title">Оперативные</span>
         <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.operational.status">
-          {{ formatSectionStatus(coverage.operational.status) }}
+          {{ formatSectionStatus(coverage.operational.status, 'operational') }}
         </span>
         <span class="sync-coverage-summary-meta">
-          {{ buildSummaryMeta(coverage.operational.datasets) }}
+          {{ buildSummaryMeta(coverage.operational.datasets, 'operational') }}
         </span>
       </button>
 
@@ -51,10 +51,10 @@
       >
         <span class="sync-coverage-summary-title">Справочники</span>
         <span class="sync-status-pill sync-status-pill-small" :data-status="coverage.reference_data.status">
-          {{ formatSectionStatus(coverage.reference_data.status) }}
+          {{ formatSectionStatus(coverage.reference_data.status, 'reference') }}
         </span>
         <span class="sync-coverage-summary-meta">
-          {{ buildSummaryMeta(coverage.reference_data.datasets) }}
+          {{ buildSummaryMeta(coverage.reference_data.datasets, 'reference') }}
         </span>
       </button>
     </div>
@@ -384,12 +384,18 @@ function buildSummaryMeta(datasets: SyncCoverageDataset[], section: CoverageTab 
   const latest = lastIndex >= 0 ? latestDate[lastIndex] : null
 
   if (nonActual === 0 && latest) {
-    return `Актуально по ${latest}`
+    return section === 'operational'
+      ? `Актуально на ${formatDateTime(latest)}`
+      : `Обновлено ${formatDateTime(latest)}`
   }
   if (nonActual === 0) {
-    return `${actual} наб. данных выглядят актуальными`
+    return section === 'operational'
+      ? 'Оперативные данные выглядят актуальными'
+      : 'Справочники выглядят актуальными'
   }
-  return `${nonActual} требуют внимания`
+  return section === 'operational'
+    ? `Требуют внимания: ${datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').map((dataset) => dataset.label).join(', ')}`
+    : `Не хватает: ${datasets.filter((dataset) => dataset.status !== 'actual' && dataset.status !== 'empty').map((dataset) => dataset.label).join(', ')}`
 }
 
 function isGapFillEligible(dataset: SyncCoverageDataset): boolean {
