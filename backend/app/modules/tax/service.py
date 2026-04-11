@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException
 import psycopg
 
-from backend.app.marts_refresh import trigger_marts_refresh_background
+from backend.app.marts_refresh import trigger_marts_refresh_sync
 from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.modules.tax.repository import TaxRepository
 from backend.app.modules.tax.schemas import TaxSettingsRead, TaxSettingsUpsert
@@ -31,4 +31,10 @@ class TaxService:
         return TaxSettingsRead.model_validate(row)
 
     def trigger_marts_refresh(self) -> None:
-        trigger_marts_refresh_background()
+        try:
+            trigger_marts_refresh_sync()
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f'Налоговая ставка сохранена, но витрина не пересчиталась: {exc}',
+            ) from exc

@@ -13,7 +13,7 @@
     </div>
 
     <div v-if="loading" class="message message-info">Загрузка налоговой ставки...</div>
-    <div v-else class="tax-settings-form">
+    <form v-else class="tax-settings-form" @submit.prevent="handleSubmit">
       <div class="field">
         <label for="tax-rate">Ставка, %</label>
         <input id="tax-rate" v-model="draftRate" type="number" min="0" max="100" step="0.01" placeholder="Например, 6" />
@@ -25,12 +25,12 @@
       </div>
 
       <div class="tax-settings-actions">
-        <button type="button" class="primary-button" :disabled="saving" @click="$emit('save')">
+        <button type="submit" class="primary-button" :disabled="loading || saving">
           {{ saving ? 'Сохранение...' : 'Сохранить' }}
         </button>
         <span class="tax-settings-hint">После сохранения витрина экономики пересчитывается в фоне.</span>
       </div>
-    </div>
+    </form>
 
     <div v-if="error" class="message message-error">{{ error }}</div>
     <div v-else-if="message" class="message message-info">{{ message }}</div>
@@ -41,16 +41,23 @@
 const draftRate = defineModel<string>('taxRate', { required: true })
 const draftEffectiveFrom = defineModel<string>('effectiveFrom', { required: true })
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   saving: boolean
   error: string
   message: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   save: []
 }>()
+
+function handleSubmit() {
+  if (props.loading || props.saving) {
+    return
+  }
+  emit('save')
+}
 </script>
 
 <style scoped>

@@ -76,7 +76,7 @@ export function useTaxSettings(params: { accountId: () => string }) {
       })
       taxRatePercent.value = response.tax_rate_percent == null ? '' : String(response.tax_rate_percent)
       effectiveFrom.value = formatDate(response.effective_from)
-      message.value = 'Сохранено. Витрина пересчитывается в фоне.'
+      message.value = 'Сохранено. Витрина пересчитана.'
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Не удалось сохранить налоговую ставку.'
     } finally {
