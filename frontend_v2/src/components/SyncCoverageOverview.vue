@@ -136,7 +136,7 @@
               <template v-else>
               <td>
                 <span class="sync-status-pill sync-status-pill-small" :data-status="dataset.status">
-                  {{ formatSectionStatus(dataset.status) }}
+                  {{ formatSectionStatus(dataset.status, activeTab) }}
                 </span>
               </td>
               <td>{{ dataset.loaded_from ?? '—' }}</td>
