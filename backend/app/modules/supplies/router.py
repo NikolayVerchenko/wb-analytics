@@ -39,8 +39,10 @@ def upsert_supply_item_cost(
     current_user: dict = Depends(get_current_user),
     conn: psycopg.Connection = Depends(db_connection),
 ) -> Response:
-    SuppliesService(conn).upsert_supply_item_cost(current_user['user_id'], account_id, supply_id, payload)
+    service = SuppliesService(conn)
+    service.upsert_supply_item_cost(current_user['user_id'], account_id, supply_id, payload)
     conn.commit()
+    service.trigger_marts_refresh()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -52,6 +54,8 @@ def upsert_supply_article_cost_for_all_sizes(
     current_user: dict = Depends(get_current_user),
     conn: psycopg.Connection = Depends(db_connection),
 ) -> Response:
-    SuppliesService(conn).upsert_supply_article_cost_for_all_sizes(current_user['user_id'], account_id, supply_id, payload)
+    service = SuppliesService(conn)
+    service.upsert_supply_article_cost_for_all_sizes(current_user['user_id'], account_id, supply_id, payload)
     conn.commit()
+    service.trigger_marts_refresh()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
