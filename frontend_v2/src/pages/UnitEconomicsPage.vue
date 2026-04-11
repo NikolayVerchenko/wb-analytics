@@ -27,6 +27,16 @@
     />
 
     <template v-else>
+      <TaxSettingsCard
+        v-model:tax-rate="taxRatePercent"
+        v-model:effective-from="taxEffectiveFrom"
+        :loading="taxLoading"
+        :saving="taxSaving"
+        :error="taxError"
+        :message="taxMessage"
+        @save="saveTaxSettings"
+      />
+
       <section class="unit-econ-section">
         <template v-if="dashboardLoading">
           <div class="card dashboard-panel">
@@ -194,8 +204,10 @@ import EconomicsDashboardSkeleton from '../components/EconomicsDashboardSkeleton
 import EconomicsSectionToolbar from '../components/EconomicsSectionToolbar.vue'
 import EconomicsTable from '../components/EconomicsTable.vue'
 import EconomicsTableSkeleton from '../components/EconomicsTableSkeleton.vue'
+import TaxSettingsCard from '../components/TaxSettingsCard.vue'
 import UiStateBlock from '../components/UiStateBlock.vue'
 import { useEconomicsPage } from '../composables/useEconomicsPage'
+import { useTaxSettings } from '../composables/useTaxSettings'
 
 const {
   accountId,
@@ -224,6 +236,18 @@ const {
   handleDashboardFiltersReset,
   handleDashboardPeriodApply,
 } = useEconomicsPage()
+
+const {
+  loading: taxLoading,
+  saving: taxSaving,
+  error: taxError,
+  message: taxMessage,
+  taxRatePercent,
+  effectiveFrom: taxEffectiveFrom,
+  save: saveTaxSettings,
+} = useTaxSettings({
+  accountId: () => accountId.value,
+})
 
 const retryDashboard = () =>
   handleDashboardPeriodApply({

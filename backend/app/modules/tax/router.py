@@ -27,4 +27,8 @@ def upsert_tax_settings(
     current_user: dict = Depends(get_current_user),
     conn: psycopg.Connection = Depends(db_connection),
 ) -> TaxSettingsRead:
-    return TaxService(conn).upsert_tax_settings(current_user['user_id'], account_id, payload)
+    service = TaxService(conn)
+    response = service.upsert_tax_settings(current_user['user_id'], account_id, payload)
+    conn.commit()
+    service.trigger_marts_refresh()
+    return response

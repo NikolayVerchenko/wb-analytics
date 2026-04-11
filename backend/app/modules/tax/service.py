@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException
 import psycopg
 
+from backend.app.marts_refresh import trigger_marts_refresh_background
 from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.modules.tax.repository import TaxRepository
 from backend.app.modules.tax.schemas import TaxSettingsRead, TaxSettingsUpsert
@@ -28,3 +29,6 @@ class TaxService:
         self._ensure_account_access(user_id=user_id, account_id=account_id)
         row = self._repository.upsert_tax_settings(account_id, payload)
         return TaxSettingsRead.model_validate(row)
+
+    def trigger_marts_refresh(self) -> None:
+        trigger_marts_refresh_background()
