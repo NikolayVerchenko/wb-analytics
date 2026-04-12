@@ -89,6 +89,44 @@ def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
         )
 
 
+def reload_period_from_raw(
+    conn: psycopg.Connection,
+    *,
+    account_id: uuid.UUID,
+    date_from: date,
+    date_to: date,
+) -> CoreLoadResult:
+    load_id, payload = fetch_latest_single_payload(
+        conn,
+        account_id=account_id,
+        source=SOURCE,
+        period_from=date_from,
+        period_to=date_to,
+        period_mode="range",
+    )
+    if not isinstance(payload, list):
+        raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
+    rows = build_rows(account_id, load_id, payload, date_from, date_to)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            delete from core.advert_costs
+            where account_id = %s
+              and (
+                upd_time::date between %s and %s
+                or (
+                    upd_time is null
+                    and coalesce(period_from, %s) <= %s
+                    and coalesce(period_to, %s) >= %s
+                )
+              )
+            """,
+            (account_id, date_from, date_to, date_to, date_to, date_from, date_from),
+        )
+    insert_rows(conn, rows)
+    return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
+
+
 def run() -> int:
     args = parse_args()
     account_id = uuid.UUID(args.account_id)
@@ -98,35 +136,12 @@ def run() -> int:
         raise ValueError("date-from must be <= date-to")
 
     def load(conn: psycopg.Connection) -> CoreLoadResult:
-        load_id, payload = fetch_latest_single_payload(
+        return reload_period_from_raw(
             conn,
             account_id=account_id,
-            source=SOURCE,
-            period_from=date_from,
-            period_to=date_to,
-            period_mode="range",
+            date_from=date_from,
+            date_to=date_to,
         )
-        if not isinstance(payload, list):
-            raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
-        rows = build_rows(account_id, load_id, payload, date_from, date_to)
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                delete from core.advert_costs
-                where account_id = %s
-                  and (
-                    upd_time::date between %s and %s
-                    or (
-                        upd_time is null
-                        and coalesce(period_from, %s) <= %s
-                        and coalesce(period_to, %s) >= %s
-                    )
-                  )
-                """,
-                (account_id, date_from, date_to, date_to, date_to, date_from, date_from),
-            )
-        insert_rows(conn, rows)
-        return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
 
     return run_core_load(load)
 
