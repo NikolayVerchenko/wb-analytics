@@ -4,6 +4,12 @@ from uuid import UUID
 import psycopg
 
 
+def _row_value(row: object, key: str, index: int) -> object:
+    if isinstance(row, dict):
+        return row[key]
+    return row[index]
+
+
 def get_latest_success_load_id(
     conn: psycopg.Connection,
     *,
@@ -52,7 +58,7 @@ def get_latest_success_load_id(
     if not row:
         raise RuntimeError("No successful raw load found for the requested parameters")
 
-    return row[0]
+    return _row_value(row, "load_id", 0)
 
 
 def fetch_payload_pages(conn: psycopg.Connection, load_id: UUID) -> list[object]:
@@ -67,7 +73,7 @@ def fetch_payload_pages(conn: psycopg.Connection, load_id: UUID) -> list[object]
             (load_id,),
         )
         rows = cur.fetchall()
-    return [row[0] for row in rows]
+    return [_row_value(row, "payload", 0) for row in rows]
 
 
 def fetch_payload_rows(conn: psycopg.Connection, load_id: UUID) -> list[tuple[object, dict]]:
@@ -82,7 +88,13 @@ def fetch_payload_rows(conn: psycopg.Connection, load_id: UUID) -> list[tuple[ob
             (load_id,),
         )
         rows = cur.fetchall()
-    return [(row[0], row[1]) for row in rows]
+    return [
+        (
+            _row_value(row, "payload", 0),
+            _row_value(row, "request_params", 1),
+        )
+        for row in rows
+    ]
 
 
 def fetch_latest_payload_pages(
