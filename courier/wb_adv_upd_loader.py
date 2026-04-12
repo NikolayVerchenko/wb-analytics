@@ -46,24 +46,41 @@ def build_rows(
     date_from: date,
     date_to: date,
 ) -> list[tuple]:
-    rows_by_key: dict[tuple[int, int], tuple] = {}
+    rows_by_key: dict[tuple[int, int], dict[str, Any]] = {}
     for item in payload:
         advert_id = item.get("advertId")
         upd_num = item.get("updNum")
         if advert_id is None or upd_num is None:
             continue
         key = (int(advert_id), int(upd_num))
-        rows_by_key[key] = (
+        upd_time = parse_upd_time(item.get("updTime"))
+        upd_sum = decimal_or_none(item.get("updSum")) or Decimal("0")
+
+        existing = rows_by_key.get(key)
+        if existing is None:
+            rows_by_key[key] = {
+                "upd_time": upd_time,
+                "upd_sum": upd_sum,
+            }
+            continue
+
+        if upd_time is not None and (existing["upd_time"] is None or upd_time > existing["upd_time"]):
+            existing["upd_time"] = upd_time
+        existing["upd_sum"] = (existing["upd_sum"] or Decimal("0")) + upd_sum
+
+    return [
+        (
             account_id,
-            key[0],
-            key[1],
-            parse_upd_time(item.get("updTime")),
-            decimal_or_none(item.get("updSum")),
+            advert_id,
+            upd_num,
+            row["upd_time"],
+            row["upd_sum"],
             date_from,
             date_to,
             load_id,
         )
-    return list(rows_by_key.values())
+        for (advert_id, upd_num), row in rows_by_key.items()
+    ]
 
 
 def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
