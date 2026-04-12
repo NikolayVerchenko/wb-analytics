@@ -9,7 +9,6 @@ import psycopg
 
 from courier.common import parse_iso_date
 from courier.core_load_runner import CoreLoadResult, run_core_load
-from courier.core_replace import replace_account_period_by_date_expression
 from courier.raw_read import fetch_latest_single_payload
 
 
@@ -46,41 +45,25 @@ def build_rows(
     date_from: date,
     date_to: date,
 ) -> list[tuple]:
-    rows_by_key: dict[tuple[int, int], dict[str, Any]] = {}
+    rows: list[tuple] = []
     for item in payload:
         advert_id = item.get("advertId")
         upd_num = item.get("updNum")
         if advert_id is None or upd_num is None:
             continue
-        key = (int(advert_id), int(upd_num))
-        upd_time = parse_upd_time(item.get("updTime"))
-        upd_sum = decimal_or_none(item.get("updSum")) or Decimal("0")
-
-        existing = rows_by_key.get(key)
-        if existing is None:
-            rows_by_key[key] = {
-                "upd_time": upd_time,
-                "upd_sum": upd_sum,
-            }
-            continue
-
-        if upd_time is not None and (existing["upd_time"] is None or upd_time > existing["upd_time"]):
-            existing["upd_time"] = upd_time
-        existing["upd_sum"] = (existing["upd_sum"] or Decimal("0")) + upd_sum
-
-    return [
-        (
-            account_id,
-            advert_id,
-            upd_num,
-            row["upd_time"],
-            row["upd_sum"],
-            date_from,
-            date_to,
-            load_id,
+        rows.append(
+            (
+                account_id,
+                int(advert_id),
+                int(upd_num),
+                parse_upd_time(item.get("updTime")),
+                decimal_or_none(item.get("updSum")),
+                date_from,
+                date_to,
+                load_id,
+            )
         )
-        for (advert_id, upd_num), row in rows_by_key.items()
-    ]
+    return rows
 
 
 def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
@@ -101,14 +84,6 @@ def insert_rows(conn: psycopg.Connection, rows: list[tuple]) -> None:
                 loaded_at
             )
             values (%s, %s, %s, %s, %s, %s, %s, %s, now())
-            on conflict (account_id, advert_id, upd_num)
-            do update set
-                upd_time = excluded.upd_time,
-                upd_sum = excluded.upd_sum,
-                period_from = excluded.period_from,
-                period_to = excluded.period_to,
-                raw_load_id = excluded.raw_load_id,
-                loaded_at = now()
             """,
             rows,
         )
@@ -134,14 +109,22 @@ def run() -> int:
         if not isinstance(payload, list):
             raise RuntimeError(f"Expected list payload, got {type(payload).__name__}")
         rows = build_rows(account_id, load_id, payload, date_from, date_to)
-        replace_account_period_by_date_expression(
-            conn,
-            table_name="core.advert_costs",
-            date_expression="upd_time::date",
-            account_id=account_id,
-            date_from=date_from,
-            date_to=date_to,
-        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                delete from core.advert_costs
+                where account_id = %s
+                  and (
+                    upd_time::date between %s and %s
+                    or (
+                        upd_time is null
+                        and coalesce(period_from, %s) <= %s
+                        and coalesce(period_to, %s) >= %s
+                    )
+                  )
+                """,
+                (account_id, date_from, date_to, date_to, date_to, date_from, date_from),
+            )
         insert_rows(conn, rows)
         return CoreLoadResult(source=SOURCE, load_id=str(load_id), metrics={"rows_loaded": len(rows)})
 

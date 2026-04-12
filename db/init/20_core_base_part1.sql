@@ -209,6 +209,7 @@ create index if not exists advert_nms_nm_idx
     on core.advert_nms (account_id, nm_id);
 
 create table if not exists core.advert_costs (
+    id bigserial primary key,
     account_id uuid not null references core.accounts(account_id) on delete cascade,
     advert_id bigint not null,
     upd_num bigint not null,
@@ -217,12 +218,13 @@ create table if not exists core.advert_costs (
     period_from date,
     period_to date,
     raw_load_id uuid,
-    loaded_at timestamptz not null default now(),
-    primary key (account_id, advert_id, upd_num)
+    loaded_at timestamptz not null default now()
 );
 
 create index if not exists advert_costs_time_idx
     on core.advert_costs (account_id, upd_time);
+create index if not exists advert_costs_advert_doc_idx
+    on core.advert_costs (account_id, advert_id, upd_num);
 
 create table if not exists core.acceptance_costs (
     id bigserial primary key,
