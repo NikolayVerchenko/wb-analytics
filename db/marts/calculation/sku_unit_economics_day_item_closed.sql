@@ -15,7 +15,7 @@ with acceptance_base as (
         ac.gi_create_date,
         ac.nm_id
 ),
-base_keys as (
+sales_keys as (
     select
         s.account_id,
         s.calendar_date,
@@ -23,14 +23,27 @@ base_keys as (
         s.nm_id,
         s.vendor_code
     from mart.fact_unit_economics_day_size_closed s
-    union
+),
+advert_only_keys as (
     select
         ab.account_id,
         ab.calendar_date,
         date_trunc('week', ab.calendar_date::timestamp)::date as week_start,
         ab.nm_id,
-        ab.vendor_code_norm as vendor_code
+        coalesce(ab.vendor_code_norm, '') as vendor_code
     from mart.fact_advert_day_item ab
+    where not exists (
+        select 1
+        from mart.fact_unit_economics_day_size_closed s
+        where s.account_id = ab.account_id
+          and s.calendar_date = ab.calendar_date
+          and s.nm_id = ab.nm_id
+    )
+),
+base_keys as (
+    select * from sales_keys
+    union
+    select * from advert_only_keys
 )
 select
     bk.account_id,
@@ -125,7 +138,6 @@ left join mart.fact_advert_day_item ab
   on ab.account_id = bk.account_id
  and ab.calendar_date = bk.calendar_date
  and ab.nm_id = bk.nm_id
- and ab.vendor_code_norm = lower(btrim(bk.vendor_code))
 left join acceptance_base acb
   on acb.account_id = bk.account_id
  and acb.calendar_date = bk.calendar_date
