@@ -552,3 +552,129 @@ class EconomicsRepository:
                 ),
             )
             return cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}
+
+    def get_advert_diagnostics_totals(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+    ) -> dict:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                with raw_totals as (
+                    select coalesce(sum(coalesce(upd_sum, 0)), 0)::numeric as raw_advert_cost
+                    from core.advert_costs
+                    where account_id = %s
+                      and upd_time::date between %s and %s
+                ),
+                sku_totals as (
+                    select coalesce(sum(coalesce(advert_cost, 0)), 0)::numeric as sku_advert_cost
+                    from mart.ui_item_day
+                    where account_id = %s
+                      and calendar_date between %s and %s
+                )
+                select
+                    raw_totals.raw_advert_cost,
+                    sku_totals.sku_advert_cost,
+                    (raw_totals.raw_advert_cost - sku_totals.sku_advert_cost)::numeric as unattributed_advert_cost
+                from raw_totals, sku_totals
+                """,
+                (
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                    date_from,
+                    date_to,
+                ),
+            )
+            return cur.fetchone() or {}
+
+    def list_advert_diagnostic_campaigns(
+        self,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+    ) -> list[dict]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                with raw_by_advert as (
+                    select
+                        ac.account_id,
+                        ac.advert_id,
+                        sum(coalesce(ac.upd_sum, 0))::numeric as raw_advert_cost
+                    from core.advert_costs ac
+                    where ac.account_id = %s
+                      and ac.upd_time::date between %s and %s
+                    group by ac.account_id, ac.advert_id
+                ),
+                alloc_by_advert as (
+                    select
+                        aca.account_id,
+                        aca.advert_id,
+                        sum(
+                            case
+                                when aca.vendor_code is null or btrim(aca.vendor_code) = '' then 0
+                                else coalesce(aca.allocated_upd_sum, 0)
+                            end
+                        )::numeric as sku_advert_cost
+                    from core.advert_cost_allocations aca
+                    where aca.account_id = %s
+                      and aca.upd_time::date between %s and %s
+                    group by aca.account_id, aca.advert_id
+                ),
+                advert_mapping as (
+                    select
+                        anv.account_id,
+                        anv.advert_id,
+                        count(distinct anv.nm_id)::int as sku_count,
+                        count(
+                            distinct case
+                                when anv.vendor_code is null or btrim(anv.vendor_code) = '' then null
+                                else anv.nm_id
+                            end
+                        )::int as sku_with_vendor_code_count
+                    from core.advert_nms_with_vendor_code anv
+                    where anv.account_id = %s
+                    group by anv.account_id, anv.advert_id
+                )
+                select
+                    r.advert_id,
+                    a.campaign_name,
+                    r.raw_advert_cost,
+                    coalesce(ab.sku_advert_cost, 0)::numeric as sku_advert_cost,
+                    (r.raw_advert_cost - coalesce(ab.sku_advert_cost, 0))::numeric as unattributed_advert_cost,
+                    coalesce(am.sku_count, 0)::int as sku_count,
+                    coalesce(am.sku_with_vendor_code_count, 0)::int as sku_with_vendor_code_count,
+                    case
+                        when coalesce(am.sku_count, 0) = 0 then 'no_sku_mapping'
+                        when coalesce(am.sku_with_vendor_code_count, 0) = 0 then 'missing_vendor_code'
+                        when r.raw_advert_cost > coalesce(ab.sku_advert_cost, 0) then 'partially_unattributed'
+                        else 'mapped'
+                    end as status
+                from raw_by_advert r
+                left join alloc_by_advert ab
+                  on ab.account_id = r.account_id
+                 and ab.advert_id = r.advert_id
+                left join advert_mapping am
+                  on am.account_id = r.account_id
+                 and am.advert_id = r.advert_id
+                left join core.adverts a
+                  on a.account_id = r.account_id
+                 and a.advert_id = r.advert_id
+                where (r.raw_advert_cost - coalesce(ab.sku_advert_cost, 0)) > 0
+                order by unattributed_advert_cost desc, r.advert_id desc
+                """,
+                (
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                ),
+            )
+            return list(cur.fetchall())

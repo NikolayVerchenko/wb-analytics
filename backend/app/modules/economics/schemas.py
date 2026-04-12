@@ -152,3 +152,23 @@ class EconomicsDashboardResponse(BaseModel):
     previous_date_from: date | None = None
     previous_date_to: date | None = None
     metrics: list[EconomicsDashboardMetricRead]
+
+
+class EconomicsAdvertDiagnosticsCampaignRead(BaseModel):
+    advert_id: int
+    campaign_name: str | None = None
+    raw_advert_cost: Decimal
+    sku_advert_cost: Decimal
+    unattributed_advert_cost: Decimal
+    sku_count: int
+    sku_with_vendor_code_count: int
+    status: str
+
+
+class EconomicsAdvertDiagnosticsResponse(BaseModel):
+    date_from: date
+    date_to: date
+    raw_advert_cost: Decimal
+    sku_advert_cost: Decimal
+    unattributed_advert_cost: Decimal
+    campaigns: list[EconomicsAdvertDiagnosticsCampaignRead]

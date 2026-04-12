@@ -8,6 +8,7 @@ import psycopg
 from backend.app.db import db_connection
 from backend.app.modules.auth.deps import get_current_user
 from backend.app.modules.economics.schemas import (
+    EconomicsAdvertDiagnosticsResponse,
     EconomicsDashboardResponse,
     EconomicsFilterOptionsResponse,
     EconomicsPeriodItemsResponse,
@@ -99,4 +100,20 @@ def get_dashboard(
         brands=brands,
         articles=articles,
         compare_previous=compare_previous,
+    )
+
+
+@router.get('/advert-diagnostics', response_model=EconomicsAdvertDiagnosticsResponse)
+def get_advert_diagnostics(
+    account_id: UUID = Query(...),
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: dict = Depends(get_current_user),
+    conn: psycopg.Connection = Depends(db_connection),
+) -> EconomicsAdvertDiagnosticsResponse:
+    return EconomicsService(conn).get_advert_diagnostics(
+        user_id=current_user['user_id'],
+        account_id=account_id,
+        date_from=date_from,
+        date_to=date_to,
     )

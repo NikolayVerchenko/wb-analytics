@@ -8,6 +8,8 @@ import psycopg
 from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.modules.economics.repository import EconomicsRepository
 from backend.app.modules.economics.schemas import (
+    EconomicsAdvertDiagnosticsCampaignRead,
+    EconomicsAdvertDiagnosticsResponse,
     EconomicsDashboardMetricRead,
     EconomicsDashboardResponse,
     EconomicsFilterOptionRead,
@@ -217,6 +219,40 @@ class EconomicsService:
             previous_date_from=previous_date_from,
             previous_date_to=previous_date_to,
             metrics=metrics,
+        )
+
+    def get_advert_diagnostics(
+        self,
+        *,
+        user_id: UUID,
+        account_id: UUID,
+        date_from: date,
+        date_to: date,
+    ) -> EconomicsAdvertDiagnosticsResponse:
+        self._ensure_account_access(user_id=user_id, account_id=account_id)
+        if date_from > date_to:
+            raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
+
+        totals_row = self._repository.get_advert_diagnostics_totals(
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        campaigns = [
+            EconomicsAdvertDiagnosticsCampaignRead.model_validate(row)
+            for row in self._repository.list_advert_diagnostic_campaigns(
+                account_id=account_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        ]
+        return EconomicsAdvertDiagnosticsResponse(
+            date_from=date_from,
+            date_to=date_to,
+            raw_advert_cost=totals_row.get('raw_advert_cost', Decimal('0')),
+            sku_advert_cost=totals_row.get('sku_advert_cost', Decimal('0')),
+            unattributed_advert_cost=totals_row.get('unattributed_advert_cost', Decimal('0')),
+            campaigns=campaigns,
         )
 
     def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
