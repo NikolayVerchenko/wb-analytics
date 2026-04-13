@@ -156,8 +156,6 @@ select
     db.seller_transfer,
     db.delivery_quantity,
     db.refusal_quantity,
-    db.delivery_cost_base,
-    db.delivery_cost_correction,
     (coalesce(db.delivery_cost_base, 0) + coalesce(db.delivery_cost_correction, 0))::numeric as delivery_cost,
     db.penalty_cost,
     db.cashback_amount,
@@ -228,6 +226,9 @@ select
             ) / coalesce(cb.cogs_amount, 0)
         ) * 100, 2)
     end::numeric as roi_percent
+    ,
+    db.delivery_cost_base,
+    db.delivery_cost_correction
 from base_keys bk
 left join daily_base db
   on db.account_id = bk.account_id
