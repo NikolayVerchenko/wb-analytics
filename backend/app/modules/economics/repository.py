@@ -62,6 +62,8 @@ class EconomicsRepository:
                         when sum(coalesce(delivery_quantity, 0)) = 0 then null
                         else round((sum(coalesce(sales_quantity, 0)) / sum(coalesce(delivery_quantity, 0))) * 100, 2)
                     end::numeric as buyout_percent,
+                    sum(coalesce(delivery_cost_base, 0))::numeric as delivery_cost_base,
+                    sum(coalesce(delivery_cost_correction, 0))::numeric as delivery_cost_correction,
                     sum(coalesce(delivery_cost, 0))::numeric as delivery_cost,
                     sum(coalesce(penalty_cost, 0))::numeric as penalty_cost,
                     sum(coalesce(cashback_amount, 0))::numeric as cashback_amount,
@@ -164,6 +166,8 @@ class EconomicsRepository:
                     coalesce(sum(coalesce(seller_transfer, 0)), 0)::numeric as seller_transfer,
                     coalesce(sum(coalesce(wb_commission_amount, 0)), 0)::numeric as wb_commission_amount,
                     coalesce(sum(coalesce(advert_cost, 0)), 0)::numeric as advert_cost,
+                    coalesce(sum(coalesce(delivery_cost_base, 0)), 0)::numeric as delivery_cost_base,
+                    coalesce(sum(coalesce(delivery_cost_correction, 0)), 0)::numeric as delivery_cost_correction,
                     coalesce(sum(coalesce(delivery_cost, 0)), 0)::numeric as delivery_cost,
                     coalesce(sum(coalesce(paid_storage_cost, 0)), 0)::numeric as paid_storage_cost,
                     coalesce(sum(coalesce(penalty_cost, 0)), 0)::numeric as penalty_cost,
@@ -197,6 +201,8 @@ class EconomicsRepository:
                     else round((wb_commission_amount / realization_before_spp) * 100, 2)
                 end::numeric as wb_commission_percent,
                 advert_cost,
+                delivery_cost_base,
+                delivery_cost_correction,
                 delivery_cost,
                 paid_storage_cost,
                 penalty_cost,
@@ -278,6 +284,8 @@ class EconomicsRepository:
                         coalesce(sum(coalesce(seller_transfer, 0)), 0)::numeric as seller_transfer,
                         coalesce(sum(coalesce(wb_commission_amount, 0)), 0)::numeric as wb_commission_amount,
                         coalesce(sum(coalesce(advert_cost, 0)), 0)::numeric as advert_cost,
+                        coalesce(sum(coalesce(delivery_cost_base, 0)), 0)::numeric as delivery_cost_base,
+                        coalesce(sum(coalesce(delivery_cost_correction, 0)), 0)::numeric as delivery_cost_correction,
                         coalesce(sum(coalesce(delivery_cost, 0)), 0)::numeric as delivery_cost,
                         coalesce(sum(coalesce(paid_storage_cost, 0)), 0)::numeric as paid_storage_cost,
                         coalesce(sum(coalesce(penalty_cost, 0)), 0)::numeric as penalty_cost,
@@ -312,6 +320,8 @@ class EconomicsRepository:
                             else round((wb_commission_amount / realization_before_spp) * 100, 2)
                         end::numeric as wb_commission_percent,
                         advert_cost,
+                        delivery_cost_base,
+                        delivery_cost_correction,
                         delivery_cost,
                         paid_storage_cost,
                         penalty_cost,
@@ -439,6 +449,8 @@ class EconomicsRepository:
                         when sum(coalesce(delivery_quantity, 0)) = 0 then null
                         else round((sum(coalesce(sales_quantity, 0)) / sum(coalesce(delivery_quantity, 0))) * 100, 2)
                     end::numeric as buyout_percent,
+                    sum(coalesce(delivery_cost_base, 0))::numeric as delivery_cost_base,
+                    sum(coalesce(delivery_cost_correction, 0))::numeric as delivery_cost_correction,
                     sum(coalesce(delivery_cost, 0))::numeric as delivery_cost,
                     sum(coalesce(penalty_cost, 0))::numeric as penalty_cost,
                     sum(coalesce(cashback_amount, 0))::numeric as cashback_amount,

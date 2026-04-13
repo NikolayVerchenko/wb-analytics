@@ -74,6 +74,8 @@ select
     sum(coalesce(s.seller_transfer, 0))::numeric as seller_transfer,
     sum(coalesce(s.delivery_quantity, 0))::numeric as delivery_quantity,
     sum(coalesce(s.refusal_quantity, 0))::numeric as refusal_quantity,
+    sum(coalesce(s.delivery_cost_base, 0))::numeric as delivery_cost_base,
+    sum(coalesce(s.delivery_cost_correction, 0))::numeric as delivery_cost_correction,
     sum(coalesce(s.delivery_cost, 0))::numeric as delivery_cost,
     sum(coalesce(s.penalty_cost, 0))::numeric as penalty_cost,
     sum(coalesce(s.cashback_amount, 0))::numeric as cashback_amount,

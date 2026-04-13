@@ -29,6 +29,8 @@ create table if not exists mart.ui_item_size_day (
     delivery_quantity numeric,
     refusal_quantity numeric,
     buyout_percent numeric,
+    delivery_cost_base numeric,
+    delivery_cost_correction numeric,
     delivery_cost numeric,
     penalty_cost numeric,
     cashback_amount numeric,
@@ -41,6 +43,10 @@ create table if not exists mart.ui_item_size_day (
     margin_percent numeric,
     roi_percent numeric
 );
+
+alter table mart.ui_item_size_day
+    add column if not exists delivery_cost_base numeric,
+    add column if not exists delivery_cost_correction numeric;
 
 create unique index if not exists ui_item_size_day_pk
     on mart.ui_item_size_day (account_id, calendar_date, nm_id, vendor_code, ts_name);
@@ -88,6 +94,8 @@ insert into mart.ui_item_size_day (
     delivery_quantity,
     refusal_quantity,
     buyout_percent,
+    delivery_cost_base,
+    delivery_cost_correction,
     delivery_cost,
     penalty_cost,
     cashback_amount,
@@ -166,6 +174,8 @@ all_rows as (
         c.delivery_quantity,
         c.refusal_quantity,
         c.buyout_percent,
+        c.delivery_cost_base,
+        c.delivery_cost_correction,
         c.delivery_cost,
         c.penalty_cost,
         c.cashback_amount,
@@ -212,6 +222,8 @@ all_rows as (
         c.delivery_quantity,
         c.refusal_quantity,
         c.buyout_percent,
+        c.delivery_cost_base,
+        c.delivery_cost_correction,
         c.delivery_cost,
         c.penalty_cost,
         c.cashback_amount,
@@ -271,6 +283,8 @@ select
         when sum(coalesce(delivery_quantity, 0)) = 0 then null
         else round((sum(coalesce(sales_quantity, 0)) / sum(coalesce(delivery_quantity, 0))) * 100, 2)
     end::numeric as buyout_percent,
+    sum(coalesce(delivery_cost_base, 0))::numeric as delivery_cost_base,
+    sum(coalesce(delivery_cost_correction, 0))::numeric as delivery_cost_correction,
     sum(coalesce(delivery_cost, 0))::numeric as delivery_cost,
     sum(coalesce(penalty_cost, 0))::numeric as penalty_cost,
     sum(coalesce(cashback_amount, 0))::numeric as cashback_amount,

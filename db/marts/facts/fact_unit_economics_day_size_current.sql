@@ -91,7 +91,8 @@ daily_base as (
                  else 0 end)::numeric as seller_transfer,
         sum(case when rw.supplier_oper_name = 'Логистика' then coalesce(rw.delivery_amount, 0) else 0 end)::numeric as delivery_quantity,
         sum(case when rw.supplier_oper_name = 'Логистика' then coalesce(rw.return_amount, 0) else 0 end)::numeric as refusal_quantity,
-        sum(case when rw.supplier_oper_name = 'Логистика' then coalesce(rw.delivery_rub, 0) else 0 end)::numeric as delivery_cost,
+        sum(case when rw.supplier_oper_name = 'Логистика' then coalesce(rw.delivery_rub, 0) else 0 end)::numeric as delivery_cost_base,
+        sum(case when rw.supplier_oper_name = 'Коррекция логистики' then coalesce(rw.delivery_rub, 0) else 0 end)::numeric as delivery_cost_correction,
         sum(case when rw.supplier_oper_name = 'Штраф' then coalesce(rw.penalty, 0) else 0 end)::numeric as penalty_cost,
         sum(coalesce(rw.cashback_amount, 0))::numeric as cashback_amount
     from core.report_detail_daily rw
@@ -155,7 +156,9 @@ select
     db.seller_transfer,
     db.delivery_quantity,
     db.refusal_quantity,
-    db.delivery_cost,
+    db.delivery_cost_base,
+    db.delivery_cost_correction,
+    (coalesce(db.delivery_cost_base, 0) + coalesce(db.delivery_cost_correction, 0))::numeric as delivery_cost,
     db.penalty_cost,
     db.cashback_amount,
     coalesce(psb.paid_storage_cost, 0)::numeric as paid_storage_cost,
@@ -175,7 +178,7 @@ select
     coalesce(cb.cogs_amount, 0)::numeric as cogs_amount,
     (
         db.seller_transfer
-        - db.delivery_cost
+        - (coalesce(db.delivery_cost_base, 0) + coalesce(db.delivery_cost_correction, 0))
         - coalesce(psb.paid_storage_cost, 0)
         - db.penalty_cost
         - coalesce(
@@ -192,7 +195,7 @@ select
         else round((
             (
                 db.seller_transfer
-                - db.delivery_cost
+                - (coalesce(db.delivery_cost_base, 0) + coalesce(db.delivery_cost_correction, 0))
                 - coalesce(psb.paid_storage_cost, 0)
                 - db.penalty_cost
                 - coalesce(
@@ -211,7 +214,7 @@ select
         else round((
             (
                 db.seller_transfer
-                - db.delivery_cost
+                - (coalesce(db.delivery_cost_base, 0) + coalesce(db.delivery_cost_correction, 0))
                 - coalesce(psb.paid_storage_cost, 0)
                 - db.penalty_cost
                 - coalesce(

@@ -15,6 +15,8 @@ export type EconomicsItem = {
   seller_transfer: number | null
   wb_commission_amount?: number | null
   wb_commission_percent?: number | null
+  delivery_cost_base?: number | null
+  delivery_cost_correction?: number | null
   delivery_cost?: number | null
   paid_storage_cost?: number | null
   acceptance_cost?: number | null
@@ -41,6 +43,8 @@ export type EconomicsSizeItem = {
   seller_transfer: number | null
   wb_commission_amount?: number | null
   wb_commission_percent?: number | null
+  delivery_cost_base?: number | null
+  delivery_cost_correction?: number | null
   delivery_cost?: number | null
   paid_storage_cost?: number | null
   acceptance_cost?: number | null
@@ -67,6 +71,8 @@ export type EconomicsTotals = {
   seller_transfer?: number | null
   wb_commission_amount?: number | null
   wb_commission_percent?: number | null
+  delivery_cost_base?: number | null
+  delivery_cost_correction?: number | null
   delivery_cost?: number | null
   paid_storage_cost?: number | null
   acceptance_cost?: number | null

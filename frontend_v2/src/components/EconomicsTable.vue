@@ -62,7 +62,12 @@
             <td class="numeric">{{ formatNumber(totals.seller_transfer) }}</td>
             <td class="numeric">{{ formatNumber(totals.wb_commission_amount) }}</td>
             <td class="numeric">{{ formatPercent(totals.wb_commission_percent) }}</td>
-            <td class="numeric">{{ formatNumber(totals.delivery_cost) }}</td>
+            <td class="numeric">
+              {{ formatNumber(totals.delivery_cost) }}
+              <div v-if="hasDeliveryCorrection(totals.delivery_cost_correction)" class="cell-subnote">
+                корр.: {{ formatNumber(totals.delivery_cost_correction) }}
+              </div>
+            </td>
             <td class="numeric">{{ formatPerSale(totals.delivery_cost, totals.sales_quantity) }}</td>
             <td class="numeric">{{ formatNumber(totals.paid_storage_cost) }}</td>
             <td class="numeric">{{ formatPerSale(totals.paid_storage_cost, totals.sales_quantity) }}</td>
@@ -140,7 +145,12 @@
               <td class="numeric">{{ formatNumber(item.seller_transfer) }}</td>
               <td class="numeric">{{ formatNumber(item.wb_commission_amount) }}</td>
               <td class="numeric">{{ formatPercent(item.wb_commission_percent) }}</td>
-              <td class="numeric">{{ formatNumber(item.delivery_cost) }}</td>
+              <td class="numeric">
+                {{ formatNumber(item.delivery_cost) }}
+                <div v-if="hasDeliveryCorrection(item.delivery_cost_correction)" class="cell-subnote">
+                  корр.: {{ formatNumber(item.delivery_cost_correction) }}
+                </div>
+              </td>
               <td class="numeric">{{ formatPerSale(item.delivery_cost, item.sales_quantity) }}</td>
               <td class="numeric">{{ formatNumber(item.paid_storage_cost) }}</td>
               <td class="numeric">{{ formatPerSale(item.paid_storage_cost, item.sales_quantity) }}</td>
@@ -219,7 +229,12 @@
               <td class="numeric">{{ formatNumber(size.seller_transfer) }}</td>
               <td class="numeric">{{ formatNumber(size.wb_commission_amount) }}</td>
               <td class="numeric">{{ formatPercent(size.wb_commission_percent) }}</td>
-              <td class="numeric">{{ formatNumber(size.delivery_cost) }}</td>
+              <td class="numeric">
+                {{ formatNumber(size.delivery_cost) }}
+                <div v-if="hasDeliveryCorrection(size.delivery_cost_correction)" class="cell-subnote">
+                  корр.: {{ formatNumber(size.delivery_cost_correction) }}
+                </div>
+              </td>
               <td class="numeric">{{ formatPerSale(size.delivery_cost, size.sales_quantity) }}</td>
               <td class="numeric">{{ formatNumber(size.paid_storage_cost) }}</td>
               <td class="numeric">{{ formatPerSale(size.paid_storage_cost, size.sales_quantity) }}</td>
@@ -302,6 +317,10 @@ function formatPerSale(value: number | null | undefined, salesQuantity: number |
   }
 
   return formatNumber(value / salesQuantity)
+}
+
+function hasDeliveryCorrection(value: number | null | undefined): boolean {
+  return value !== null && value !== undefined && Math.abs(value) > 0.0001
 }
 
 function getBuyoutState(value: number | null | undefined) {
@@ -496,5 +515,11 @@ function getRowPriorityClass(item: EconomicsItem) {
   color: #b91c1c;
   opacity: 0.85;
   font-weight: 600;
+}
+
+.cell-subnote {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b7280;
 }
 </style>

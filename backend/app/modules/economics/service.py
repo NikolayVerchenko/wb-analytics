@@ -33,6 +33,8 @@ class EconomicsService:
         ('seller_transfer', 'Перечисления продавцу'),
         ('wb_commission_amount', 'Комиссия ВБ'),
         ('wb_commission_percent', '% комиссии ВБ'),
+        ('delivery_cost_base', 'Базовая логистика'),
+        ('delivery_cost_correction', 'Коррекция логистики'),
         ('delivery_cost', 'Логистика'),
         ('paid_storage_cost', 'Хранение'),
         ('acceptance_cost', 'Платная приемка'),
@@ -265,6 +267,8 @@ class EconomicsService:
         seller_transfer = self._sum(items, 'seller_transfer')
         wb_commission_amount = self._sum(items, 'wb_commission_amount')
         advert_cost = self._sum(items, 'advert_cost')
+        delivery_cost_base = self._sum(items, 'delivery_cost_base')
+        delivery_cost_correction = self._sum(items, 'delivery_cost_correction')
         delivery_cost = self._sum(items, 'delivery_cost')
         paid_storage_cost = self._sum(items, 'paid_storage_cost')
         penalty_cost = self._sum(items, 'penalty_cost')
@@ -286,6 +290,8 @@ class EconomicsService:
             wb_commission_amount=wb_commission_amount,
             wb_commission_percent=self._percent(wb_commission_amount, realization_before_spp),
             advert_cost=advert_cost,
+            delivery_cost_base=delivery_cost_base,
+            delivery_cost_correction=delivery_cost_correction,
             delivery_cost=delivery_cost,
             paid_storage_cost=paid_storage_cost,
             penalty_cost=penalty_cost,

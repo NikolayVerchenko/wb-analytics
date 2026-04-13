@@ -29,6 +29,8 @@ create table if not exists mart.ui_item_day (
     delivery_quantity numeric,
     refusal_quantity numeric,
     buyout_percent numeric,
+    delivery_cost_base numeric,
+    delivery_cost_correction numeric,
     delivery_cost numeric,
     penalty_cost numeric,
     cashback_amount numeric,
@@ -43,6 +45,10 @@ create table if not exists mart.ui_item_day (
     margin_percent numeric,
     roi_percent numeric
 );
+
+alter table mart.ui_item_day
+    add column if not exists delivery_cost_base numeric,
+    add column if not exists delivery_cost_correction numeric;
 
 alter table mart.ui_item_day
     add column if not exists order_count bigint;
@@ -93,6 +99,8 @@ insert into mart.ui_item_day (
     delivery_quantity,
     refusal_quantity,
     buyout_percent,
+    delivery_cost_base,
+    delivery_cost_correction,
     delivery_cost,
     penalty_cost,
     cashback_amount,
@@ -142,6 +150,8 @@ with size_rollup as (
             when sum(coalesce(delivery_quantity, 0)) = 0 then null
             else round((sum(coalesce(sales_quantity, 0)) / sum(coalesce(delivery_quantity, 0))) * 100, 2)
         end::numeric as buyout_percent,
+        sum(coalesce(delivery_cost_base, 0))::numeric as delivery_cost_base,
+        sum(coalesce(delivery_cost_correction, 0))::numeric as delivery_cost_correction,
         sum(coalesce(delivery_cost, 0))::numeric as delivery_cost,
         sum(coalesce(penalty_cost, 0))::numeric as penalty_cost,
         sum(coalesce(cashback_amount, 0))::numeric as cashback_amount,
@@ -270,6 +280,8 @@ select
     coalesce(sr.delivery_quantity, 0)::numeric as delivery_quantity,
     coalesce(sr.refusal_quantity, 0)::numeric as refusal_quantity,
     sr.buyout_percent,
+    coalesce(sr.delivery_cost_base, 0)::numeric as delivery_cost_base,
+    coalesce(sr.delivery_cost_correction, 0)::numeric as delivery_cost_correction,
     coalesce(sr.delivery_cost, 0)::numeric as delivery_cost,
     coalesce(sr.penalty_cost, 0)::numeric as penalty_cost,
     coalesce(sr.cashback_amount, 0)::numeric as cashback_amount,

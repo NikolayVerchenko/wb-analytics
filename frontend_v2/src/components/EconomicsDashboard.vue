@@ -20,6 +20,7 @@
             <span class="kpi-badge" :data-state="card.state">{{ statusLabel(card.state) }}</span>
           </div>
           <strong class="dashboard-value">{{ card.value }}</strong>
+          <span v-if="card.hint" class="dashboard-hint">{{ card.hint }}</span>
           <div class="dashboard-meta">
             <span v-if="card.previous">Было: {{ card.previous }}</span>
             <span v-if="card.delta" class="dashboard-delta" :data-trend="card.trend">
@@ -47,6 +48,7 @@
             <span class="kpi-dot" :data-state="card.state"></span>
           </div>
           <strong class="dashboard-value">{{ card.value }}</strong>
+          <span v-if="card.hint" class="dashboard-hint">{{ card.hint }}</span>
           <div class="dashboard-meta">
             <span v-if="card.previous">Было: {{ card.previous }}</span>
             <span v-if="card.delta" class="dashboard-delta" :data-trend="card.trend">
@@ -306,6 +308,11 @@ function statusLabel(state: CardState) {
 
 .dashboard-card-secondary .dashboard-value {
   font-size: 20px;
+}
+
+.dashboard-hint {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .dashboard-meta {

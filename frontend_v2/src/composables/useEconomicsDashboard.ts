@@ -5,6 +5,7 @@ import type { DashboardMetricView, DashboardResponse } from '../types/dashboard'
 import { formatNumber, formatPercent } from '../utils/format'
 
 const PERCENT_KEYS = new Set(['buyout_percent', 'spp_percent', 'wb_commission_percent', 'margin_percent', 'roi_percent', 'delta_percent'])
+const HIDDEN_METRIC_KEYS = new Set(['delivery_cost_base', 'delivery_cost_correction'])
 
 function formatDashboardValue(key: string, value: number | null | undefined) {
   if (PERCENT_KEYS.has(key)) {
@@ -24,16 +25,25 @@ export function useEconomicsDashboard() {
       return []
     }
 
-    return dashboard.value.metrics.map((metric) => ({
-      key: metric.key,
-      label: metric.label,
-      value: formatDashboardValue(metric.key, metric.current),
-      previous: metric.previous === undefined ? undefined : formatDashboardValue(metric.key, metric.previous),
-      delta:
-        metric.delta === undefined
-          ? undefined
-          : `${metric.delta !== null && metric.delta > 0 ? '+' : ''}${formatDashboardValue(metric.key, metric.delta)}`,
-    }))
+    const byKey = new Map(dashboard.value.metrics.map((metric) => [metric.key, metric]))
+    const deliveryCorrection = byKey.get('delivery_cost_correction')
+
+    return dashboard.value.metrics
+      .filter((metric) => !HIDDEN_METRIC_KEYS.has(metric.key))
+      .map((metric) => ({
+        key: metric.key,
+        label: metric.label,
+        value: formatDashboardValue(metric.key, metric.current),
+        previous: metric.previous === undefined ? undefined : formatDashboardValue(metric.key, metric.previous),
+        delta:
+          metric.delta === undefined
+            ? undefined
+            : `${metric.delta !== null && metric.delta > 0 ? '+' : ''}${formatDashboardValue(metric.key, metric.delta)}`,
+        hint:
+          metric.key === 'delivery_cost' && deliveryCorrection && deliveryCorrection.current
+            ? `В т.ч. коррекция: ${formatDashboardValue('delivery_cost_correction', deliveryCorrection.current)}`
+            : undefined,
+      }))
   })
 
   async function loadDashboard(params: {

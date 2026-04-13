@@ -31,4 +31,5 @@ export type DashboardMetricView = {
   value: string
   previous?: string
   delta?: string
+  hint?: string
 }

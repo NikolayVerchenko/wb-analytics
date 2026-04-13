@@ -35,6 +35,8 @@ class EconomicsPeriodItemRead(BaseModel):
     delivery_quantity: Decimal | None
     refusal_quantity: Decimal | None
     buyout_percent: Decimal | None
+    delivery_cost_base: Decimal | None
+    delivery_cost_correction: Decimal | None
     delivery_cost: Decimal | None
     penalty_cost: Decimal | None
     cashback_amount: Decimal | None
@@ -80,6 +82,8 @@ class EconomicsPeriodSizeRead(BaseModel):
     delivery_quantity: Decimal | None
     refusal_quantity: Decimal | None
     buyout_percent: Decimal | None
+    delivery_cost_base: Decimal | None
+    delivery_cost_correction: Decimal | None
     delivery_cost: Decimal | None
     penalty_cost: Decimal | None
     cashback_amount: Decimal | None
@@ -108,6 +112,8 @@ class EconomicsPeriodTotalsRead(BaseModel):
     wb_commission_amount: Decimal | None
     wb_commission_percent: Decimal | None
     advert_cost: Decimal | None
+    delivery_cost_base: Decimal | None
+    delivery_cost_correction: Decimal | None
     delivery_cost: Decimal | None
     paid_storage_cost: Decimal | None
     penalty_cost: Decimal | None
