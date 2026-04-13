@@ -47,7 +47,9 @@ select
     f.cogs_amount,
     f.profit_amount,
     f.margin_percent,
-    f.roi_percent
+    f.roi_percent,
+    f.delivery_cost_base,
+    f.delivery_cost_correction
 from mart.fact_unit_economics_day_size_closed f
 left join core.accounts acc
   on acc.account_id = f.account_id
