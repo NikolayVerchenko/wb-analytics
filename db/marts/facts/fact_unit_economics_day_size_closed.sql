@@ -7,7 +7,7 @@ with paid_storage_base as (
         psc.report_date as calendar_date,
         psc.nm_id,
         lower(btrim(psc.vendor_code)) as vendor_code_norm,
-        lower(btrim(coalesce(psc.size, ''))) as size_norm,
+        core.normalize_size(psc.size) as size_norm,
         sum(coalesce(psc.warehouse_price, 0))::numeric as paid_storage_cost,
         max(psc.subject) as subject_name,
         max(psc.brand) as brand_name
@@ -17,7 +17,7 @@ with paid_storage_base as (
         psc.report_date,
         psc.nm_id,
         lower(btrim(psc.vendor_code)),
-        lower(btrim(coalesce(psc.size, '')))
+        core.normalize_size(psc.size)
 ),
 cogs_base as (
     select
@@ -35,12 +35,31 @@ cogs_base as (
             end
         )::numeric as cogs_amount
     from core.report_detail_weekly rw
-    left join core.account_supply_item_costs sic
+    left join (
+        select
+            sic.account_id,
+            sic.supply_id,
+            sic.nm_id,
+            lower(btrim(sic.vendor_code)) as vendor_code_norm,
+            coalesce(
+                csb.canonical_ts_name,
+                core.normalize_size(sic.tech_size)
+            ) as canonical_ts_name_norm,
+            sic.unit_cogs
+        from core.account_supply_item_costs sic
+        left join core.cogs_sku_bridge csb
+          on csb.account_id = sic.account_id
+         and csb.supply_id = sic.supply_id
+         and csb.nm_id = sic.nm_id
+         and lower(btrim(csb.vendor_code)) = lower(btrim(sic.vendor_code))
+         and coalesce(csb.tech_size, '') = coalesce(sic.tech_size, '')
+         and coalesce(csb.barcode, '') = coalesce(sic.barcode, '')
+    ) sic
       on sic.account_id = rw.account_id
      and sic.supply_id = rw.gi_id
      and sic.nm_id = rw.nm_id
-     and lower(btrim(sic.vendor_code)) = lower(btrim(rw.sa_name))
-     and lower(btrim(coalesce(sic.tech_size, ''))) = lower(btrim(coalesce(rw.ts_name, '')))
+     and sic.vendor_code_norm = lower(btrim(rw.sa_name))
+     and sic.canonical_ts_name_norm = core.normalize_size(rw.ts_name)
     where rw.gi_id is not null
       and rw.nm_id is not null
       and rw.nm_id <> 0
@@ -116,7 +135,7 @@ base_keys as (
         db.week_start,
         db.nm_id,
         lower(btrim(db.vendor_code)) as vendor_code,
-        lower(btrim(coalesce(db.ts_name, ''))) as ts_name
+        core.normalize_size(db.ts_name) as ts_name
     from daily_base db
     union
     select
@@ -236,14 +255,14 @@ left join daily_base db
  and db.week_start = bk.week_start
  and db.nm_id = bk.nm_id
  and lower(btrim(db.vendor_code)) = lower(btrim(bk.vendor_code))
- and lower(btrim(coalesce(db.ts_name, ''))) = lower(btrim(coalesce(bk.ts_name, '')))
+ and core.normalize_size(db.ts_name) = bk.ts_name
 left join cogs_base cb
   on cb.account_id = bk.account_id
  and cb.calendar_date = bk.calendar_date
  and cb.week_start = bk.week_start
  and cb.nm_id = bk.nm_id
  and lower(btrim(cb.vendor_code)) = lower(btrim(bk.vendor_code))
- and lower(btrim(coalesce(cb.ts_name, ''))) = lower(btrim(coalesce(bk.ts_name, '')))
+ and core.normalize_size(cb.ts_name) = bk.ts_name
 left join tax_settings ts
   on ts.account_id = bk.account_id
 left join paid_storage_base psb
@@ -251,4 +270,4 @@ left join paid_storage_base psb
  and psb.calendar_date = bk.calendar_date
  and psb.nm_id = bk.nm_id
  and psb.vendor_code_norm = lower(btrim(bk.vendor_code))
- and psb.size_norm = lower(btrim(coalesce(bk.ts_name, '')));
+ and psb.size_norm = bk.ts_name;

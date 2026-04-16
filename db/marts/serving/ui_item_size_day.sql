@@ -117,7 +117,7 @@ closed_keys as (
         calendar_date,
         nm_id,
         btrim(lower(coalesce(vendor_code, ''))) as vendor_code,
-        btrim(upper(coalesce(ts_name, ''))) as ts_name
+        core.normalize_size(ts_name) as ts_name
     from mart.sku_unit_economics_day_closed
     where not (
         coalesce(sales_quantity, 0) = 0
@@ -152,7 +152,7 @@ all_rows as (
         c.week_start,
         c.nm_id,
         btrim(lower(coalesce(c.vendor_code, ''))) as vendor_code,
-        btrim(upper(coalesce(c.ts_name, ''))) as ts_name,
+        core.normalize_size(c.ts_name) as ts_name,
         c.brand_name,
         c.subject_name,
         c.bonus_type_name,
@@ -200,7 +200,7 @@ all_rows as (
         c.week_start,
         c.nm_id,
         btrim(lower(coalesce(c.vendor_code, ''))) as vendor_code,
-        btrim(upper(coalesce(c.ts_name, ''))) as ts_name,
+        core.normalize_size(c.ts_name) as ts_name,
         c.brand_name,
         c.subject_name,
         c.bonus_type_name,
@@ -245,7 +245,7 @@ all_rows as (
               and ck.calendar_date = c.calendar_date
               and ck.nm_id = c.nm_id
               and ck.vendor_code = btrim(lower(coalesce(c.vendor_code, '')))
-              and ck.ts_name = btrim(upper(coalesce(c.ts_name, '')))
+              and ck.ts_name = core.normalize_size(c.ts_name)
         )
 )
 select

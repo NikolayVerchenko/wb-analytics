@@ -3,7 +3,9 @@ db/core/telegram_identities.sql
 db/core/auth_sessions.sql
 db/core/password_reset_tokens.sql
 db/core/account_tax_settings.sql
+db/core/normalize_size.sql
 db/core/account_supply_item_costs.sql
+db/core/cogs_sku_bridge.sql
 db/core/advert_costs.sql
 db/core/sync_jobs.sql
 db/core/sync_job_steps.sql

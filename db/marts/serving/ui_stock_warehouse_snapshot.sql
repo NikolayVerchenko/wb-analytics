@@ -37,7 +37,7 @@ select
     nm_id,
     btrim(lower(coalesce(vendor_code, ''))) as vendor_code,
     btrim(coalesce(barcode, '')) as barcode,
-    btrim(upper(coalesce(tech_size, ''))) as tech_size,
+    core.normalize_size(tech_size) as tech_size,
     btrim(coalesce(warehouse_name, '')) as warehouse_name,
     max(loaded_at) as snapshot_loaded_at,
     sum(coalesce(quantity, 0))::numeric as quantity
@@ -48,6 +48,6 @@ group by
     nm_id,
     btrim(lower(coalesce(vendor_code, ''))),
     btrim(coalesce(barcode, '')),
-    btrim(upper(coalesce(tech_size, ''))),
+    core.normalize_size(tech_size),
     btrim(coalesce(warehouse_name, ''))
 having sum(coalesce(quantity, 0)) <> 0;
