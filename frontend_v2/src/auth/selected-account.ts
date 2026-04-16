@@ -14,6 +14,10 @@ const selectedAccountId = ref<string | null>(readStoredAccountId())
 
 export const selectedAccount = computed(() => selectedAccountId.value)
 
+export function getSelectedAccountId(): string | null {
+  return selectedAccountId.value
+}
+
 export function setSelectedAccountId(accountId: string | null) {
   selectedAccountId.value = accountId
 

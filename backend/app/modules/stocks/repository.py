@@ -1,7 +1,16 @@
+import re
 from time import perf_counter
 from uuid import UUID
 
 import psycopg
+
+
+def _normalize_size(value: str) -> str:
+    normalized = (value or '').upper()
+    normalized = re.sub(r'\s+', ' ', normalized)
+    normalized = re.sub(r'\s*([\-\/\.,])\s*', r'\1', normalized)
+    normalized = re.sub(r'\s+', '', normalized)
+    return normalized
 
 
 class StocksRepository:
@@ -91,7 +100,7 @@ class StocksRepository:
         tech_size: str,
     ) -> list[dict]:
         normalized_vendor_code = vendor_code.strip().lower()
-        normalized_tech_size = tech_size.strip().upper()
+        normalized_tech_size = _normalize_size(tech_size)
         with self._conn.cursor() as cur:
             cur.execute(
                 """

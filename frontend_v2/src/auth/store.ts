@@ -1,5 +1,6 @@
 import { computed, reactive } from 'vue'
 import { apiUrl } from '../api/http'
+import { getSelectedAccountId } from './selected-account'
 
 type User = {
   id: string
@@ -96,9 +97,16 @@ export async function refreshSession(): Promise<boolean> {
   refreshPromise = (async () => {
     authState.refreshing = true
     try {
+      const selectedAccountId = getSelectedAccountId()
       const response = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          account_id: selectedAccountId,
+        }),
       })
 
       if (!response.ok) {
@@ -121,6 +129,45 @@ export async function refreshSession(): Promise<boolean> {
   })()
 
   return refreshPromise
+}
+
+export async function scopeAccount(accountId: string): Promise<boolean> {
+  const attempt = async (): Promise<Response> => {
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    })
+    const accessToken = getAccessToken()
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`)
+    }
+
+    return fetch(apiUrl('/api/auth/account-scope'), {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({ account_id: accountId }),
+    })
+  }
+
+  let response = await attempt()
+  if (response.status === 401) {
+    const refreshed = await refreshSession()
+    if (!refreshed) {
+      clearSession()
+      return false
+    }
+    response = await attempt()
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to scope account session.')
+  }
+
+  const payload = (await response.json()) as RefreshResponse
+  authState.accessToken = payload.access_token
+  authState.user = payload.user
+  authState.initialized = true
+  return true
 }
 
 export async function logout(): Promise<void> {

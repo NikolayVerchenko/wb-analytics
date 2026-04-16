@@ -12,5 +12,6 @@ db/marts/calculation/sku_unit_economics_day_item_current.sql
 db/marts/serving/drop_legacy_ui_views.sql
 db/marts/serving/ui_item_size_day.sql
 db/marts/serving/ui_item_day.sql
+db/marts/serving/ui_item_day_filters.sql
 db/marts/serving/ui_stock_item_snapshot.sql
 db/marts/serving/ui_stock_warehouse_snapshot.sql

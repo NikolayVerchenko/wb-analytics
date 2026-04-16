@@ -24,6 +24,7 @@ def main() -> None:
         Path("db/marts/serving/drop_legacy_ui_views.sql"),
         Path("db/marts/serving/ui_item_size_day.sql"),
         Path("db/marts/serving/ui_item_day.sql"),
+        Path("db/marts/serving/ui_item_day_filters.sql"),
         Path("db/marts/serving/ui_stock_item_snapshot.sql"),
         Path("db/marts/serving/ui_stock_warehouse_snapshot.sql"),
     ]

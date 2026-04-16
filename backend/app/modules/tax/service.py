@@ -5,6 +5,7 @@ import psycopg
 
 from backend.app.marts_refresh import trigger_marts_refresh_sync
 from backend.app.modules.accounts.access import AccountAccessRepository
+from backend.app.modules.auth.service import AccessTokenPayload
 from backend.app.modules.tax.repository import TaxRepository
 from backend.app.modules.tax.schemas import TaxSettingsRead, TaxSettingsUpsert
 
@@ -14,12 +15,12 @@ class TaxService:
         self._repository = TaxRepository(conn)
         self._account_access = AccountAccessRepository(conn)
 
-    def _ensure_account_access(self, *, user_id: UUID, account_id: UUID) -> None:
-        if not self._account_access.user_has_account_access(user_id=user_id, account_id=account_id):
+    def _ensure_account_access(self, *, principal: AccessTokenPayload, account_id: UUID) -> None:
+        if not self._account_access.principal_has_account_access(principal=principal, account_id=account_id):
             raise HTTPException(status_code=403, detail='Access to this account is forbidden.')
 
-    def get_tax_settings(self, user_id: UUID, account_id: UUID) -> TaxSettingsRead:
-        self._ensure_account_access(user_id=user_id, account_id=account_id)
+    def get_tax_settings(self, principal: AccessTokenPayload, account_id: UUID) -> TaxSettingsRead:
+        self._ensure_account_access(principal=principal, account_id=account_id)
         row = self._repository.get_tax_settings(account_id)
         if row is None:
             return TaxSettingsRead(
@@ -32,8 +33,8 @@ class TaxService:
             )
         return TaxSettingsRead.model_validate(row)
 
-    def upsert_tax_settings(self, user_id: UUID, account_id: UUID, payload: TaxSettingsUpsert) -> TaxSettingsRead:
-        self._ensure_account_access(user_id=user_id, account_id=account_id)
+    def upsert_tax_settings(self, principal: AccessTokenPayload, account_id: UUID, payload: TaxSettingsUpsert) -> TaxSettingsRead:
+        self._ensure_account_access(principal=principal, account_id=account_id)
         row = self._repository.upsert_tax_settings(account_id, payload)
         return TaxSettingsRead.model_validate(row)
 

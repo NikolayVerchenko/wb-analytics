@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Query
 import psycopg
 
 from backend.app.db import db_connection
-from backend.app.modules.auth.deps import get_current_user
+from backend.app.modules.auth.deps import get_current_principal
+from backend.app.modules.auth.service import AccessTokenPayload
 from backend.app.modules.stocks.schemas import (
     StockSnapshotItemsResponse,
     StockWarehouseRead,
@@ -20,10 +21,10 @@ def list_stock_items(
     search: str | None = Query(None),
     limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
-    current_user: dict = Depends(get_current_user),
+    principal: AccessTokenPayload = Depends(get_current_principal),
     conn: psycopg.Connection = Depends(db_connection),
 ) -> StockSnapshotItemsResponse:
-    return StocksService(conn).list_items(current_user['user_id'], account_id, search, limit, offset)
+    return StocksService(conn).list_items(principal, account_id, search, limit, offset)
 
 
 @router.get('/warehouses', response_model=list[StockWarehouseRead])
@@ -32,7 +33,7 @@ def list_stock_warehouses(
     nm_id: int = Query(...),
     vendor_code: str = Query(...),
     tech_size: str = Query(...),
-    current_user: dict = Depends(get_current_user),
+    principal: AccessTokenPayload = Depends(get_current_principal),
     conn: psycopg.Connection = Depends(db_connection),
 ) -> list[StockWarehouseRead]:
-    return StocksService(conn).list_warehouses(current_user['user_id'], account_id, nm_id, vendor_code, tech_size)
+    return StocksService(conn).list_warehouses(principal, account_id, nm_id, vendor_code, tech_size)
