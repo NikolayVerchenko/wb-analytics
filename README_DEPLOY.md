@@ -91,7 +91,7 @@ cp frontend_v2/.env.production.example frontend_v2/.env.production
 ```
 
 ### 4.1 `.env.prod`
-Используется контейнером PostgreSQL.
+Используется контейнерами PostgreSQL и PgBouncer.
 
 Пример:
 
@@ -100,10 +100,15 @@ POSTGRES_DB=wb_analytics
 POSTGRES_USER=wb_app
 POSTGRES_PASSWORD=change_me_to_strong_password
 POSTGRES_PORT=5432
+PGBOUNCER_POOL_MODE=transaction
+PGBOUNCER_MAX_CLIENT_CONN=500
+PGBOUNCER_DEFAULT_POOL_SIZE=30
+PGBOUNCER_RESERVE_POOL_SIZE=10
 ```
 
 Критично:
 - `POSTGRES_PASSWORD`
+- `PGBOUNCER_POOL_MODE=transaction`
 
 ### 4.2 `.env.courier.prod`
 Используется backend.
@@ -114,8 +119,8 @@ POSTGRES_PORT=5432
 APP_ENV=production
 APP_SECRET_KEY=change_me_to_a_long_random_secret
 FRONTEND_BASE_URL=https://your-domain.ru
-PGHOST=postgres
-PGPORT=5432
+PGHOST=pgbouncer
+PGPORT=6432
 PGDATABASE=wb_analytics
 PGUSER=wb_app
 PGPASSWORD=change_me_to_strong_password
@@ -127,6 +132,10 @@ REFRESH_COOKIE_NAME=wb_refresh_token
 REFRESH_COOKIE_DOMAIN=your-domain.ru
 REFRESH_COOKIE_SAMESITE=lax
 REFRESH_COOKIE_SECURE=true
+WEB_CONCURRENCY=3
+PGPOOL_MIN_SIZE=5
+PGPOOL_MAX_SIZE=20
+PGPOOL_TIMEOUT_SECONDS=20
 PORT=8010
 ```
 
@@ -134,8 +143,8 @@ PORT=8010
 - `APP_ENV=production`
 - `APP_SECRET_KEY`
 - `FRONTEND_BASE_URL`
-- `PGHOST`
-- `PGPORT`
+- `PGHOST=pgbouncer`
+- `PGPORT=6432`
 - `PGDATABASE`
 - `PGUSER`
 - `PGPASSWORD`
@@ -184,13 +193,13 @@ VITE_TELEGRAM_BOT_NAME=your_bot_name
 - как минимум `core.accounts`
 - остальные исходные таблицы, на которые опираются mart/fact SQL
 
-### 5.1 Поднять PostgreSQL
+### 5.1 Поднять PostgreSQL и PgBouncer
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d postgres
+docker compose -f docker-compose.prod.yml up -d postgres pgbouncer
 ```
 
-Проверить, что postgres healthy:
+Проверить, что `postgres` и `pgbouncer` healthy:
 
 ```bash
 docker compose -f docker-compose.prod.yml ps
@@ -226,6 +235,7 @@ docker compose -f docker-compose.prod.yml up --build -d
 
 Поднимутся сервисы:
 - `postgres` — база данных
+- `pgbouncer` — transaction-pooling слой между API и PostgreSQL
 - `frontend-build` — собирает `frontend_v2/dist` и кладёт статику в volume
 - `backend` — FastAPI + Uvicorn на внутреннем порту `8010`
 - `nginx` — публикует фронт и проксирует `/api`
@@ -234,11 +244,12 @@ docker compose -f docker-compose.prod.yml up --build -d
 - браузер -> `nginx:80`
 - `GET /` -> статический frontend из volume `frontend_dist`
 - `GET /api/...` -> proxy на `backend:8010`
-- backend -> PostgreSQL (`postgres:5432`)
+- backend -> PgBouncer (`pgbouncer:6432`) -> PostgreSQL (`postgres:5432`)
 
 ### Порты
 - внешний: `80/tcp`
 - внутренний backend: `8010`
+- внутренний pgbouncer: `6432`
 - внутренний postgres: `5432`
 
 ---
@@ -345,6 +356,12 @@ docker compose -f docker-compose.prod.yml logs -f nginx
 docker compose -f docker-compose.prod.yml logs -f postgres
 ```
 
+### Логи pgbouncer
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f pgbouncer
+```
+
 ### Проверить контейнеры
 
 ```bash
@@ -399,6 +416,13 @@ location / {
 - совпадают ли `PG*` env между postgres и backend
 - не пытаетесь ли поднять проект на полностью пустой БД без базовой схемы
 
+### 10.6 После включения PgBouncer появляются ошибки prepared statement
+Проверить, что backend использует кодовую версию, где в `backend/app/db.py` для `psycopg` отключены auto-prepared statements:
+
+- `prepare_threshold=None`
+
+Для `PgBouncer` в `transaction` mode это обязательно.
+
 ---
 
 ## 11. Что уже готово
@@ -432,16 +456,17 @@ location / {
 ### Что добавлено
 - `WEB_CONCURRENCY` — количество uvicorn workers для web API
 - `PGPOOL_MIN_SIZE` / `PGPOOL_MAX_SIZE` / `PGPOOL_TIMEOUT_SECONDS` — pool соединений к PostgreSQL для web API
+- `pgbouncer` — обязательный connection broker между API и PostgreSQL
 - `sync-worker` — отдельный контейнер, который обрабатывает pending sync jobs вне web-процесса
 - `SYNC_WORKER_POLL_SECONDS` — интервал опроса pending jobs
 - `SYNC_WORKER_MAX_STEPS_PER_TICK` — сколько sync steps worker выполняет за один проход
 
 ### Что нужно задать в `.env.courier.prod`
 ```env
-WEB_CONCURRENCY=2
-PGPOOL_MIN_SIZE=2
-PGPOOL_MAX_SIZE=10
-PGPOOL_TIMEOUT_SECONDS=10
+WEB_CONCURRENCY=3
+PGPOOL_MIN_SIZE=5
+PGPOOL_MAX_SIZE=20
+PGPOOL_TIMEOUT_SECONDS=20
 SYNC_WORKER_POLL_SECONDS=5
 SYNC_WORKER_MAX_STEPS_PER_TICK=1
 SYNC_WORKER_MODE=
@@ -455,6 +480,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 
 Поднимутся сервисы:
 - `postgres`
+- `pgbouncer`
 - `frontend-build`
 - `backend`
 - `sync-worker`

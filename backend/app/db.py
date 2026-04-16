@@ -18,6 +18,7 @@ def get_db_connection() -> psycopg.Connection:
         user=settings.pg_user,
         password=settings.pg_password,
         row_factory=psycopg.rows.dict_row,
+        prepare_threshold=None,
     )
 
 
@@ -37,7 +38,10 @@ def get_db_pool() -> ConnectionPool:
             min_size=settings.pgpool_min_size,
             max_size=settings.pgpool_max_size,
             timeout=settings.pgpool_timeout_seconds,
-            kwargs={'row_factory': psycopg.rows.dict_row},
+            kwargs={
+                'row_factory': psycopg.rows.dict_row,
+                'prepare_threshold': None,
+            },
             open=True,
         )
     return _db_pool
