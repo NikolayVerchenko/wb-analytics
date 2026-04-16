@@ -7,7 +7,7 @@ import psycopg
 from backend.app.db import db_connection
 from backend.app.settings import Settings, get_settings
 from .repository import AuthRepository
-from .service import AuthTokenError, AuthTokenService
+from .service import AccessTokenPayload, AuthTokenError, AuthTokenService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -20,21 +20,25 @@ def get_token_service(settings: Settings = Depends(get_settings)) -> AuthTokenSe
     )
 
 
-def get_current_user(
+def get_current_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    conn: psycopg.Connection = Depends(db_connection),
     token_service: AuthTokenService = Depends(get_token_service),
-) -> dict:
+) -> AccessTokenPayload:
     if credentials is None or credentials.scheme.lower() != 'bearer':
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required.')
 
     try:
-        token_payload = token_service.decode_access_token(credentials.credentials)
+        return token_service.decode_access_token(credentials.credentials)
     except AuthTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
+
+def get_current_user(
+    principal: AccessTokenPayload = Depends(get_current_principal),
+    conn: psycopg.Connection = Depends(db_connection),
+) -> dict:
     repo = AuthRepository(conn)
-    user = repo.get_user_profile(token_payload.user_id)
+    user = repo.get_user_profile(principal.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found.')
 

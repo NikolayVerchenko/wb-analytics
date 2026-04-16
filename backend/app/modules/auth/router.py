@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 import psycopg
 
 from backend.app.db import db_connection
+from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.settings import Settings, get_settings
 from backend.app.security.rate_limit import rate_limit_dependency
 from .cookies import clear_refresh_cookie, get_refresh_cookie, set_refresh_cookie
 from .deps import get_current_user, get_token_service
 from .repository import AuthRepository
 from .schemas import (
+    AccountScopeRequest,
     LogoutRequest,
     LogoutResponse,
     PasswordForgotRequest,
@@ -178,7 +181,15 @@ def refresh_tokens(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found.')
 
     repo.revoke_session_by_id(session['id'])
-    return _issue_token_pair(repo, token_service, user, request=request, response=response, settings=settings)
+    return _issue_token_pair(
+        repo,
+        token_service,
+        user,
+        request=request,
+        response=response,
+        settings=settings,
+        active_account_id=_resolve_active_account_id(payload=payload, user_id=user['user_id'], conn=conn),
+    )
 
 
 @router.post('/logout', response_model=LogoutResponse)
@@ -199,6 +210,28 @@ def logout(
     return LogoutResponse(success=True)
 
 
+@router.post('/account-scope', response_model=TokenPairResponse)
+def issue_account_scoped_access_token(
+    payload: AccountScopeRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: psycopg.Connection = Depends(db_connection),
+    token_service: AuthTokenService = Depends(get_token_service),
+) -> TokenPairResponse:
+    try:
+        account_id = UUID(payload.account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid account_id.') from exc
+
+    access_repo = AccountAccessRepository(conn)
+    if not access_repo.user_has_account_access(user_id=current_user['user_id'], account_id=account_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Access to this account is forbidden.')
+
+    return TokenPairResponse(
+        access_token=token_service.issue_access_token(current_user['user_id'], active_account_id=account_id),
+        user=_to_user_read(current_user),
+    )
+
+
 def _to_user_read(user: dict) -> UserRead:
     return UserRead(
         id=str(user['user_id']),
@@ -217,8 +250,9 @@ def _issue_token_pair(
     request: Request,
     response: Response,
     settings: Settings,
+    active_account_id: UUID | None = None,
 ) -> TokenPairResponse:
-    tokens = token_service.issue_token_pair(user['user_id'])
+    tokens = token_service.issue_token_pair(user['user_id'], active_account_id=active_account_id)
     repo.create_session(user['user_id'], tokens.refresh_token_hash, tokens.refresh_expires_at)
     set_refresh_cookie(
         response,
@@ -230,6 +264,27 @@ def _issue_token_pair(
         access_token=tokens.access_token,
         user=_to_user_read(user),
     )
+
+
+def _resolve_active_account_id(
+    *,
+    payload: RefreshRequest | None,
+    user_id: UUID,
+    conn: psycopg.Connection,
+) -> UUID | None:
+    if payload is None or payload.account_id is None:
+        return None
+
+    try:
+        account_id = UUID(payload.account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid account_id.') from exc
+
+    access_repo = AccountAccessRepository(conn)
+    if not access_repo.user_has_account_access(user_id=user_id, account_id=account_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Access to this account is forbidden.')
+
+    return account_id
 
 
 def _normalize_email(value: str) -> str:

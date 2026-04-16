@@ -57,7 +57,7 @@ latest_cost_candidates as (
         sic.account_id,
         sic.nm_id,
         btrim(lower(coalesce(sic.vendor_code, ''))) as vendor_code,
-        btrim(upper(coalesce(sic.tech_size, ''))) as tech_size,
+        core.normalize_size(sic.tech_size) as tech_size,
         btrim(coalesce(sic.barcode, '')) as barcode,
         sic.unit_cogs,
         coalesce(si.fact_date, si.supply_date, si.create_date, si.updated_date) as supply_sort_ts,
@@ -67,7 +67,7 @@ latest_cost_candidates as (
                 sic.account_id,
                 sic.nm_id,
                 btrim(lower(coalesce(sic.vendor_code, ''))),
-                btrim(upper(coalesce(sic.tech_size, ''))),
+                core.normalize_size(sic.tech_size),
                 btrim(coalesce(sic.barcode, ''))
             order by
                 coalesce(si.fact_date, si.supply_date, si.create_date, si.updated_date) desc nulls last,
@@ -80,7 +80,7 @@ latest_cost_candidates as (
      and si.supply_id = sic.supply_id
      and si.nm_id = sic.nm_id
      and btrim(lower(coalesce(si.vendor_code, ''))) = btrim(lower(coalesce(sic.vendor_code, '')))
-     and btrim(upper(coalesce(si.tech_size, ''))) = btrim(upper(coalesce(sic.tech_size, '')))
+     and core.normalize_size(si.tech_size) = core.normalize_size(sic.tech_size)
      and btrim(coalesce(si.barcode, '')) = btrim(coalesce(sic.barcode, ''))
 ),
 exact_costs as (
@@ -144,7 +144,7 @@ normalized as (
         w.nm_id,
         btrim(lower(coalesce(w.vendor_code, pc.vendor_code, ''))) as vendor_code,
         btrim(coalesce(w.barcode, '')) as barcode,
-        btrim(upper(coalesce(w.tech_size, ''))) as tech_size,
+        core.normalize_size(w.tech_size) as tech_size,
         coalesce(nullif(btrim(w.brand), ''), nullif(btrim(pc.brand), '')) as brand_name,
         coalesce(nullif(btrim(w.subject_name), ''), nullif(btrim(pc.subject_name), '')) as subject_name,
         pp.photo_url,
@@ -164,13 +164,13 @@ normalized as (
       on ec.account_id = w.account_id
      and ec.nm_id = w.nm_id
      and ec.vendor_code = btrim(lower(coalesce(w.vendor_code, pc.vendor_code, '')))
-     and ec.tech_size = btrim(upper(coalesce(w.tech_size, '')))
+     and ec.tech_size = core.normalize_size(w.tech_size)
      and ec.barcode = btrim(coalesce(w.barcode, ''))
     left join size_costs sc
       on sc.account_id = w.account_id
      and sc.nm_id = w.nm_id
      and sc.vendor_code = btrim(lower(coalesce(w.vendor_code, pc.vendor_code, '')))
-     and sc.tech_size = btrim(upper(coalesce(w.tech_size, '')))
+     and sc.tech_size = core.normalize_size(w.tech_size)
     left join article_costs ac
       on ac.account_id = w.account_id
      and ac.nm_id = w.nm_id

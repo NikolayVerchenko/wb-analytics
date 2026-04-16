@@ -20,7 +20,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { getAccounts } from './api/accounts'
-import { authState, isAuthenticated, logout } from './auth/store'
+import { authState, isAuthenticated, logout, scopeAccount } from './auth/store'
 import { ensureSelectedAccountId, selectedAccount, setSelectedAccountId } from './auth/selected-account'
 import AppHeader from './components/AppHeader.vue'
 import type { Account } from './types/account'
@@ -42,7 +42,10 @@ async function loadAccounts() {
 
   try {
     accounts.value = await getAccounts()
-    ensureSelectedAccountId(accounts.value.map((account) => account.account_id))
+    const resolvedAccountId = ensureSelectedAccountId(accounts.value.map((account) => account.account_id))
+    if (resolvedAccountId) {
+      await scopeAccount(resolvedAccountId)
+    }
   } catch {
     accounts.value = []
     setSelectedAccountId(null)
@@ -56,12 +59,16 @@ async function handleLogout() {
   await router.push({ name: 'register' })
 }
 
-function handleSelectAccount(accountId: string | null) {
+async function handleSelectAccount(accountId: string | null) {
   setSelectedAccountId(accountId)
+
+  if (accountId && isAuthenticated.value) {
+    await scopeAccount(accountId)
+  }
 
   const pagesUsingAccountQuery = new Set(['economics', 'economics-problems', 'stocks', 'supplies', 'sync'])
   if (route.name && pagesUsingAccountQuery.has(String(route.name))) {
-    router.replace({
+    await router.replace({
       path: route.path,
       query: {
         ...route.query,
@@ -82,9 +89,13 @@ watch(
 
 watch(
   () => route.query.account_id,
-  (accountId) => {
+  async (accountId) => {
     if (typeof accountId === 'string' && accountId) {
+      const shouldScope = selectedAccount.value !== accountId
       setSelectedAccountId(accountId)
+      if (shouldScope && isAuthenticated.value) {
+        await scopeAccount(accountId)
+      }
     }
   },
   { immediate: true },

@@ -18,6 +18,7 @@ class AuthTokenError(ValueError):
 class AccessTokenPayload:
     user_id: UUID
     expires_at: datetime
+    active_account_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -47,8 +48,8 @@ class AuthTokenService:
         self._access_ttl_minutes = access_ttl_minutes
         self._refresh_ttl_days = refresh_ttl_days
 
-    def issue_token_pair(self, user_id: UUID) -> IssuedTokenPair:
-        access_token = self.issue_access_token(user_id)
+    def issue_token_pair(self, user_id: UUID, *, active_account_id: UUID | None = None) -> IssuedTokenPair:
+        access_token = self.issue_access_token(user_id, active_account_id=active_account_id)
         refresh_token = secrets.token_urlsafe(48)
         refresh_token_hash = self.hash_refresh_token(refresh_token)
         refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=self._refresh_ttl_days)
@@ -59,13 +60,15 @@ class AuthTokenService:
             refresh_expires_at=refresh_expires_at,
         )
 
-    def issue_access_token(self, user_id: UUID) -> str:
+    def issue_access_token(self, user_id: UUID, *, active_account_id: UUID | None = None) -> str:
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self._access_ttl_minutes)
         payload = {
             'sub': str(user_id),
             'type': 'access',
             'exp': int(expires_at.timestamp()),
         }
+        if active_account_id is not None:
+            payload['aid'] = str(active_account_id)
         encoded_payload = _b64encode(json.dumps(payload, separators=(',', ':')).encode('utf-8'))
         signature = self._sign(encoded_payload)
         return f'{encoded_payload}.{signature}'
@@ -91,13 +94,14 @@ class AuthTokenService:
         try:
             expires_at = datetime.fromtimestamp(int(payload['exp']), tz=timezone.utc)
             user_id = UUID(str(payload['sub']))
+            active_account_id = UUID(str(payload['aid'])) if payload.get('aid') else None
         except (KeyError, TypeError, ValueError) as exc:
             raise AuthTokenError('Invalid access token claims.') from exc
 
         if expires_at <= datetime.now(timezone.utc):
             raise AuthTokenError('Access token expired.')
 
-        return AccessTokenPayload(user_id=user_id, expires_at=expires_at)
+        return AccessTokenPayload(user_id=user_id, expires_at=expires_at, active_account_id=active_account_id)
 
     @staticmethod
     def hash_refresh_token(refresh_token: str) -> str:

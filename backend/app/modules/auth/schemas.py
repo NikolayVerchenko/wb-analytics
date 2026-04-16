@@ -11,6 +11,7 @@ class UserRead(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str | None = None
+    account_id: str | None = None
 
 
 class LogoutRequest(BaseModel):
@@ -25,6 +26,10 @@ class TokenPairResponse(BaseModel):
     access_token: str
     token_type: str = 'bearer'
     user: UserRead
+
+
+class AccountScopeRequest(BaseModel):
+    account_id: str
 
 
 class PasswordLoginRequest(BaseModel):

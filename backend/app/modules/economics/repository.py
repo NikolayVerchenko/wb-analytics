@@ -499,44 +499,35 @@ class EconomicsRepository:
         date_to: date,
     ) -> dict:
         with self._conn.cursor() as cur:
+            started_at = perf_counter()
             cur.execute(
                 """
-                with all_items as (
-                    select
-                        subject_name,
-                        brand_name,
-                        vendor_code,
-                        nm_id
-                    from mart.ui_item_day
+                with
+                subjects as (
+                    select distinct value, label, hint
+                    from mart.ui_item_day_filters
                     where account_id = %s
+                      and filter_type = 'subject'
                       and calendar_date between %s and %s
                 ),
-                subjects as (
-                    select distinct btrim(subject_name) as value
-                    from all_items
-                    where nullif(btrim(subject_name), '') is not null
-                ),
                 brands as (
-                    select distinct btrim(brand_name) as value
-                    from all_items
-                    where nullif(btrim(brand_name), '') is not null
+                    select distinct value, label, hint
+                    from mart.ui_item_day_filters
+                    where account_id = %s
+                      and filter_type = 'brand'
+                      and calendar_date between %s and %s
                 ),
                 articles as (
-                    select
-                        btrim(vendor_code) as value,
-                        btrim(vendor_code) as label,
-                        nm_id::text as hint,
-                        row_number() over (
-                            partition by btrim(vendor_code)
-                            order by nm_id nulls last
-                        ) as rn
-                    from all_items
-                    where nullif(btrim(vendor_code), '') is not null
+                    select distinct value, label, hint
+                    from mart.ui_item_day_filters
+                    where account_id = %s
+                      and filter_type = 'article'
+                      and calendar_date between %s and %s
                 )
                 select
                     coalesce(
                         (
-                            select json_agg(json_build_object('value', value, 'label', value, 'hint', null) order by value)
+                            select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label)
                             from subjects
                         ),
                         '[]'::json
@@ -552,7 +543,6 @@ class EconomicsRepository:
                         (
                             select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label)
                             from articles
-                            where rn = 1
                         ),
                         '[]'::json
                     ) as articles
@@ -561,9 +551,22 @@ class EconomicsRepository:
                     account_id,
                     date_from,
                     date_to,
+                    account_id,
+                    date_from,
+                    date_to,
+                    account_id,
+                    date_from,
+                    date_to,
                 ),
             )
-            return cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}
+            row = cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            print(
+                'economics_filter_options_timing '
+                f'account_id={account_id} date_from={date_from} date_to={date_to} '
+                f'elapsed_ms={elapsed_ms:.1f}'
+            )
+            return row
 
     def get_advert_diagnostics_totals(
         self,
