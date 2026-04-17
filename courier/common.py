@@ -25,6 +25,7 @@ def db_connection() -> psycopg.Connection:
         dbname=os.getenv("PGDATABASE"),
         user=os.getenv("PGUSER"),
         password=os.getenv("PGPASSWORD"),
+        prepare_threshold=None,
     )
 
 
