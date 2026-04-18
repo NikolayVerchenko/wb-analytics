@@ -5,12 +5,28 @@ import psycopg
 
 
 class SuppliesRepository:
-    def __init__(self, conn: psycopg.Connection) -> None:
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
 
-    def list_supplies(self, account_id: UUID) -> list[dict]:
-        with self._conn.cursor() as cur:
-            cur.execute(
+    async def user_has_account_access(self, user_id: UUID, account_id: UUID) -> bool:
+        async with self._conn.cursor() as cur:
+            await cur.execute(
+                """
+                select exists(
+                    select 1
+                    from core.user_accounts
+                    where user_id = %s
+                      and account_id = %s
+                ) as has_access
+                """,
+                (user_id, account_id),
+            )
+            row = await cur.fetchone()
+            return bool(row['has_access']) if row is not None else False
+
+    async def list_supplies(self, account_id: UUID) -> list[dict]:
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 select
                     account_id,
@@ -31,11 +47,11 @@ class SuppliesRepository:
                 """,
                 (account_id,),
             )
-            return list(cur.fetchall())
+            return list(await cur.fetchall())
 
-    def list_supply_items(self, account_id: UUID, supply_id: int) -> list[dict]:
-        with self._conn.cursor() as cur:
-            cur.execute(
+    async def list_supply_items(self, account_id: UUID, supply_id: int) -> list[dict]:
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 select
                     si.account_id,
@@ -76,9 +92,9 @@ class SuppliesRepository:
                 """,
                 (account_id, supply_id),
             )
-            return list(cur.fetchall())
+            return list(await cur.fetchall())
 
-    def upsert_supply_item_cost(
+    async def upsert_supply_item_cost(
         self,
         account_id: UUID,
         supply_id: int,
@@ -88,8 +104,8 @@ class SuppliesRepository:
         barcode: str | None,
         unit_cogs: Decimal,
     ) -> dict | None:
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 insert into core.account_supply_item_costs (
                     account_id,
@@ -117,9 +133,9 @@ class SuppliesRepository:
                 """,
                 (account_id, supply_id, nm_id, vendor_code, tech_size, barcode, unit_cogs),
             )
-            return cur.fetchone()
+            return await cur.fetchone()
 
-    def upsert_supply_article_cost_for_all_sizes(
+    async def upsert_supply_article_cost_for_all_sizes(
         self,
         account_id: UUID,
         supply_id: int,
@@ -127,8 +143,8 @@ class SuppliesRepository:
         vendor_code: str,
         unit_cogs: Decimal,
     ) -> int:
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 with matching_items as (
                     select distinct
@@ -174,5 +190,5 @@ class SuppliesRepository:
                 """,
                 (account_id, supply_id, nm_id, vendor_code, unit_cogs),
             )
-            row = cur.fetchone()
+            row = await cur.fetchone()
             return row["affected_rows"] if row else 0
