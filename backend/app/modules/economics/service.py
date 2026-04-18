@@ -31,6 +31,7 @@ class EconomicsService:
         ('refusal_quantity', 'Количество отказов'),
         ('buyout_percent', '% выкупа'),
         ('realization_before_spp', 'Реализация до СПП'),
+        ('realization_after_spp', 'Реализация после СПП'),
         ('spp_amount', 'СПП'),
         ('spp_percent', '% СПП'),
         ('seller_transfer', 'Перечисления продавцу'),

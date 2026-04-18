@@ -20,6 +20,9 @@
             <span class="kpi-badge" :data-state="card.state">{{ statusLabel(card.state) }}</span>
           </div>
           <strong class="dashboard-value">{{ card.value }}</strong>
+          <span v-if="card.secondaryValue" class="dashboard-secondary-value">
+            {{ card.secondaryLabel || 'Дополнительно' }}: {{ card.secondaryValue }}
+          </span>
           <span v-if="card.hint" class="dashboard-hint">{{ card.hint }}</span>
           <div class="dashboard-meta">
             <span v-if="card.previous">Было: {{ card.previous }}</span>
@@ -87,15 +90,23 @@ type CardView = DashboardMetricView & {
   secondaryLabel?: string
 }
 
-const primaryKeys = new Set(['realization_before_spp', 'realization_after_spp', 'profit_amount'])
+const primaryKeys = new Set(['realization_before_spp', 'profit_amount'])
+/** Порядок после префикса (заказы, реализация после СПП, сумма СПП): 4 — комиссия, 5 — логистика, 6 — хранение, далее по запросу. */
 const secondaryOrder = [
-  'sales_quantity',
-  'delivery_quantity',
-  'refusal_quantity',
-  'buyout_percent',
   'wb_commission_amount',
   'delivery_cost',
   'paid_storage_cost',
+  'advert_cost',
+  'acceptance_cost',
+  'penalty_cost',
+  'seller_transfer',
+  'spp_percent',
+  'buyout_percent',
+  'wb_commission_percent',
+  'tax_amount',
+  'cogs_amount',
+  'margin_percent',
+  'roi_percent',
 ]
 
 const positiveKeys = new Set([
@@ -185,10 +196,31 @@ function getCardView(metric: DashboardMetricView): CardView {
   }
 }
 
-const primaryCards = computed(() => props.metrics.filter((metric) => primaryKeys.has(metric.key)).map(getCardView))
+const primaryCards = computed(() => {
+  const salesMetric = props.metrics.find((m) => m.key === 'sales_quantity')
+  return props.metrics
+    .filter((metric) => primaryKeys.has(metric.key))
+    .map((metric) => {
+      const card = getCardView(metric)
+      if (metric.key === 'realization_before_spp' && salesMetric) {
+        return {
+          ...card,
+          secondaryValue: salesMetric.value,
+          secondaryLabel: 'Количество продаж',
+        }
+      }
+      return card
+    })
+})
 
 const secondaryCards = computed(() => {
-  const rest = props.metrics.filter((metric) => !primaryKeys.has(metric.key))
+  const rest = props.metrics.filter(
+    (metric) =>
+      !primaryKeys.has(metric.key) &&
+      metric.key !== 'sales_quantity' &&
+      metric.key !== 'delivery_quantity' &&
+      metric.key !== 'refusal_quantity',
+  )
   const byKey = new Map(rest.map((metric) => [metric.key, metric]))
   const ordered: DashboardMetricView[] = []
 
@@ -221,6 +253,18 @@ const secondaryCards = computed(() => {
       secondaryValue: orderCountMetric?.value ?? '—',
       secondaryLabel: 'Количество заказов',
     })
+  }
+
+  const afterSppMetric = byKey.get('realization_after_spp')
+  if (afterSppMetric) {
+    byKey.delete('realization_after_spp')
+    cards.push(getCardView(afterSppMetric))
+  }
+
+  const sppAmountMetric = byKey.get('spp_amount')
+  if (sppAmountMetric) {
+    byKey.delete('spp_amount')
+    cards.push(getCardView(sppAmountMetric))
   }
 
   for (const key of secondaryOrder) {
