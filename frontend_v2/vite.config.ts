@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
@@ -6,6 +7,11 @@ const proxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8010'
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    }
+  },
   server: {
     host: '127.0.0.1',
     port: 5174,

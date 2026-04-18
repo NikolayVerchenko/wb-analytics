@@ -1,19 +1,32 @@
 <template>
-  <div class="app-shell">
-    <AppHeader
-      :accounts="accounts"
-      :selected-account-id="selectedAccountId"
-      :user-name="currentUserName"
-      :user-email="currentUserEmail"
-      :is-authenticated="isAuthenticated"
-      @logout="handleLogout"
-      @select-account="handleSelectAccount"
-    />
+  <template v-if="isAuthenticated">
+    <AppLayout>
+      <template #topbar-actions>
+        <Select v-model="selectedAccountIdProxy">
+          <SelectTrigger class="h-9 w-[240px] bg-white">
+            <SelectValue placeholder="Выберите кабинет..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem v-for="acc in accounts" :key="acc.account_id" :value="acc.account_id">
+                {{ acc.name }}
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <button @click="handleLogout" class="text-sm font-medium text-rose-600 hover:text-rose-700">
+          Выйти
+        </button>
+      </template>
 
-    <main class="page-container">
+      <RouterView />
+    </AppLayout>
+  </template>
+  <template v-else>
+    <main class="flex min-h-screen items-center justify-center bg-zinc-50 p-4">
       <RouterView />
     </main>
-  </div>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -22,7 +35,15 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { getAccounts } from './api/accounts'
 import { authState, isAuthenticated, logout, scopeAccount } from './auth/store'
 import { ensureSelectedAccountId, selectedAccount, setSelectedAccountId } from './auth/selected-account'
-import AppHeader from './components/AppHeader.vue'
+import AppLayout from './components/AppLayout.vue'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Account } from './types/account'
 
 const route = useRoute()
@@ -30,6 +51,10 @@ const router = useRouter()
 const accounts = ref<Account[]>([])
 
 const selectedAccountId = computed(() => selectedAccount.value)
+const selectedAccountIdProxy = computed({
+  get: () => selectedAccountId.value || '',
+  set: (val) => handleSelectAccount(val || null)
+})
 const currentUserName = computed(() => authState.user?.name || null)
 const currentUserEmail = computed(() => authState.user?.email || null)
 
@@ -101,4 +126,3 @@ watch(
   { immediate: true },
 )
 </script>
-

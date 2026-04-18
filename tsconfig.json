@@ -17,13 +17,22 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["./frontend_v2/src/*"],
       "@core/*": ["./src/core/*"],
       "@infrastructure/*": ["./src/infrastructure/*"],
       "@application/*": ["./src/application/*"],
       "@presentation/*": ["./src/presentation/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": [
+    "src/**/*.ts", 
+    "src/**/*.d.ts", 
+    "src/**/*.tsx", 
+    "src/**/*.vue",
+    "frontend_v2/src/**/*.ts",
+    "frontend_v2/src/**/*.d.ts",
+    "frontend_v2/src/**/*.tsx",
+    "frontend_v2/src/**/*.vue"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
