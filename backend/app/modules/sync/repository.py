@@ -443,7 +443,7 @@ class SyncRepository:
         conditions = [
             'j.account_id = %s',
             's.dataset = %s',
-            "s.status = 'failed'",
+            "s.status in ('failed', 'success')",
         ]
         params: list[object] = [account_id, dataset]
         if mode is not None:
@@ -469,7 +469,10 @@ class SyncRepository:
                 """,
                 params,
             )
-            return cur.fetchone()
+            row = cur.fetchone()
+            if row and row['status'] == 'failed':
+                return row
+            return None
 
     def get_operational_dataset_freshness(
         self,
