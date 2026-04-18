@@ -58,6 +58,7 @@ def build_rows(
     load_id: uuid.UUID,
     payload_pages: list[dict[str, Any]],
 ) -> tuple[list[tuple], list[tuple], list[tuple], list[tuple]]:
+    seen_cards: set[int] = set()
     cards_rows: list[tuple] = []
     colors_rows: list[tuple] = []
     photos_rows: list[tuple] = []
@@ -71,11 +72,16 @@ def build_rows(
             if nm_id is None:
                 continue
 
+            nm_id_int = int(nm_id)
+            if nm_id_int in seen_cards:
+                continue
+            seen_cards.add(nm_id_int)
+
             dimensions = card.get("dimensions") or {}
             cards_rows.append(
                 (
                     account_id,
-                    int(nm_id),
+                    nm_id_int,
                     card.get("vendorCode"),
                     card.get("subjectName"),
                     card.get("brand"),
@@ -85,7 +91,7 @@ def build_rows(
             )
 
             for color_index, color in enumerate(extract_colors(card), start=1):
-                colors_rows.append((account_id, int(nm_id), color, color_index, load_id))
+                colors_rows.append((account_id, nm_id_int, color, color_index, load_id))
 
             for photo_index, photo in enumerate(card.get("photos") or [], start=1):
                 photo_url = (
@@ -97,7 +103,7 @@ def build_rows(
                 )
                 if not photo_url:
                     continue
-                photos_rows.append((account_id, int(nm_id), photo_index, photo_url, load_id))
+                photos_rows.append((account_id, nm_id_int, photo_index, photo_url, load_id))
 
             seen_sizes: set[str] = set()
             for size in card.get("sizes") or []:
@@ -105,13 +111,9 @@ def build_rows(
                 if not tech_size or tech_size in seen_sizes:
                     continue
                 seen_sizes.add(tech_size)
-                sizes_rows.append((account_id, int(nm_id), tech_size, len(seen_sizes), load_id))
+                sizes_rows.append((account_id, nm_id_int, tech_size, len(seen_sizes), load_id))
 
-    deduped_cards: dict[tuple[uuid.UUID, int], tuple] = {}
-    for row in cards_rows:
-        deduped_cards[(row[0], row[1])] = row
-
-    return list(deduped_cards.values()), colors_rows, photos_rows, sizes_rows
+    return cards_rows, colors_rows, photos_rows, sizes_rows
 
 
 def insert_rows(

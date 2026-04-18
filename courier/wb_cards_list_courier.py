@@ -76,7 +76,11 @@ def run() -> int:
                 if not isinstance(payload, dict):
                     raise RuntimeError(f"Expected object payload, got {type(payload).__name__}")
 
-                cards = payload.get("cards")
+            if payload.get("error") is True:
+                error_text = payload.get("errorText") or "Unknown error"
+                raise RuntimeError(f"WB API error: {error_text}")
+
+            cards = payload.get("cards") or []
                 if not isinstance(cards, list):
                     raise RuntimeError("Expected payload.cards to be a list")
 
