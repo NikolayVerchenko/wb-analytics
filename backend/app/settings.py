@@ -81,6 +81,9 @@ class Settings:
             return configured
 
         default_hosts = ['localhost', '127.0.0.1', 'testserver']
+        # Docker Desktop (Windows/macOS): clients in containers reach the host via this hostname.
+        if not self.is_production and 'host.docker.internal' not in default_hosts:
+            default_hosts.append('host.docker.internal')
         parsed = urlparse(self.frontend_base_url)
         host = parsed.hostname
         if host and host not in default_hosts:

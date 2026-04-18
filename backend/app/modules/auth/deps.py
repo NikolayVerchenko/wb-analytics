@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import psycopg
+from time import perf_counter
 
 from backend.app.db import db_connection
 from backend.app.settings import Settings, get_settings
@@ -24,13 +25,21 @@ def get_current_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     token_service: AuthTokenService = Depends(get_token_service),
 ) -> AccessTokenPayload:
+    started_at = perf_counter()
     if credentials is None or credentials.scheme.lower() != 'bearer':
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required.')
 
     try:
-        return token_service.decode_access_token(credentials.credentials)
+        principal = token_service.decode_access_token(credentials.credentials)
     except AuthTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    elapsed_ms = (perf_counter() - started_at) * 1000
+    print(
+        'auth_principal_timing '
+        f'user_id={principal.user_id} active_account_id={principal.active_account_id} '
+        f'elapsed_ms={elapsed_ms:.1f}'
+    )
+    return principal
 
 
 def get_current_user(

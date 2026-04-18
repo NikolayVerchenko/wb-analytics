@@ -5,10 +5,25 @@ from uuid import UUID
 
 import psycopg
 
-
 class EconomicsRepository:
-    def __init__(self, conn: psycopg.Connection) -> None:
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
+
+    async def user_has_account_access(self, user_id: UUID, account_id: UUID) -> bool:
+        async with self._conn.cursor() as cur:
+            await cur.execute(
+                """
+                select exists(
+                    select 1
+                    from core.user_accounts
+                    where user_id = %s
+                      and account_id = %s
+                ) as has_access
+                """,
+                (user_id, account_id),
+            )
+            row = await cur.fetchone()
+            return bool(row['has_access']) if row is not None else False
 
     def _build_period_items_base_query(
         self,
@@ -239,7 +254,7 @@ class EconomicsRepository:
             max_profit,
         )
         return sql, params
-    def list_period_items(
+    async def list_period_items(
         self,
         account_id: UUID,
         date_from: date,
@@ -255,117 +270,44 @@ class EconomicsRepository:
         min_profit: Decimal | None,
         max_profit: Decimal | None,
     ) -> tuple[list[dict], dict]:
-        with self._conn.cursor() as cur:
+        async with self._conn.cursor() as cur:
             base_sql, base_params = self._build_period_items_base_query(
-                account_id=account_id,
-                date_from=date_from,
-                date_to=date_to,
-                search=search,
-                subjects=subjects,
-                brands=brands,
-                articles=articles,
-                only_negative_profit=only_negative_profit,
-                min_profit=min_profit,
-                max_profit=max_profit,
+                account_id=account_id, date_from=date_from, date_to=date_to, search=search,
+                subjects=subjects, brands=brands, articles=articles,
+                only_negative_profit=only_negative_profit, min_profit=min_profit, max_profit=max_profit,
             )
-            combined_sql = (
+            items_sql = (
                 base_sql
                 + f"""
-                , totals as (
-                    select
-                        coalesce(sum(coalesce(order_count, 0)), 0)::numeric as order_count,
-                        coalesce(sum(coalesce(sales_quantity, 0)), 0)::numeric as sales_quantity,
-                        coalesce(sum(coalesce(delivery_quantity, 0)), 0)::numeric as delivery_quantity,
-                        coalesce(sum(coalesce(refusal_quantity, 0)), 0)::numeric as refusal_quantity,
-                        coalesce(sum(coalesce(return_quantity, 0)), 0)::numeric as return_quantity,
-                        coalesce(sum(coalesce(realization_before_spp, 0)), 0)::numeric as realization_before_spp,
-                        coalesce(sum(coalesce(realization_after_spp, 0)), 0)::numeric as realization_after_spp,
-                        coalesce(sum(coalesce(spp_amount, 0)), 0)::numeric as spp_amount,
-                        coalesce(sum(coalesce(seller_transfer, 0)), 0)::numeric as seller_transfer,
-                        coalesce(sum(coalesce(wb_commission_amount, 0)), 0)::numeric as wb_commission_amount,
-                        coalesce(sum(coalesce(advert_cost, 0)), 0)::numeric as advert_cost,
-                        coalesce(sum(coalesce(delivery_cost_base, 0)), 0)::numeric as delivery_cost_base,
-                        coalesce(sum(coalesce(delivery_cost_correction, 0)), 0)::numeric as delivery_cost_correction,
-                        coalesce(sum(coalesce(delivery_cost, 0)), 0)::numeric as delivery_cost,
-                        coalesce(sum(coalesce(paid_storage_cost, 0)), 0)::numeric as paid_storage_cost,
-                        coalesce(sum(coalesce(penalty_cost, 0)), 0)::numeric as penalty_cost,
-                        coalesce(sum(coalesce(acceptance_cost, 0)), 0)::numeric as acceptance_cost,
-                        coalesce(sum(coalesce(tax_amount, 0)), 0)::numeric as tax_amount,
-                        coalesce(sum(coalesce(cogs_amount, 0)), 0)::numeric as cogs_amount,
-                        coalesce(sum(coalesce(profit_amount, 0)), 0)::numeric as profit_amount
-                    from filtered
-                ),
-                totals_row as (
-                    select
-                        order_count,
-                        sales_quantity,
-                        delivery_quantity,
-                        refusal_quantity,
-                        return_quantity,
-                        case
-                            when delivery_quantity = 0 then null
-                            else round((sales_quantity / delivery_quantity) * 100, 2)
-                        end::numeric as buyout_percent,
-                        realization_before_spp,
-                        realization_after_spp,
-                        spp_amount,
-                        case
-                            when realization_before_spp = 0 then null
-                            else round((spp_amount / realization_before_spp) * 100, 2)
-                        end::numeric as spp_percent,
-                        seller_transfer,
-                        wb_commission_amount,
-                        case
-                            when realization_before_spp = 0 then null
-                            else round((wb_commission_amount / realization_before_spp) * 100, 2)
-                        end::numeric as wb_commission_percent,
-                        advert_cost,
-                        delivery_cost_base,
-                        delivery_cost_correction,
-                        delivery_cost,
-                        paid_storage_cost,
-                        penalty_cost,
-                        acceptance_cost,
-                        tax_amount,
-                        cogs_amount,
-                        profit_amount,
-                        case
-                            when realization_before_spp = 0 then null
-                            else round((profit_amount / realization_before_spp) * 100, 2)
-                        end::numeric as margin_percent,
-                        case
-                            when cogs_amount = 0 then null
-                            else round((profit_amount / cogs_amount) * 100, 2)
-                        end::numeric as roi_percent
-                    from totals
-                ),
-                paged as (
-                    select *
-                    from filtered
-                    order by {order_by}
-                    limit %s
-                    offset %s
+                , paged as (
+                    select * from filtered order by {order_by} limit %s offset %s
                 )
-                select
-                    (select row_to_json(t) from totals_row t) as totals,
-                    coalesce((select json_agg(row_to_json(p)) from paged p), '[]'::json) as items
+                select coalesce((select json_agg(row_to_json(p)) from paged p), '[]'::json) as items
                 """
             )
             started_at = perf_counter()
-            cur.execute(combined_sql, base_params + (limit, offset))
-            result = cur.fetchone() or {}
+            await cur.execute(items_sql, base_params + (limit, offset))
+            result = await cur.fetchone() or {}
             elapsed_ms = (perf_counter() - started_at) * 1000
-            totals_row = result.get('totals') or {}
             rows = result.get('items') or []
-            print(
-                'economics_period_items_timing '
-                f'account_id={account_id} date_from={date_from} date_to={date_to} '
-                f'limit={limit} offset={offset} rows={len(rows)} '
-                f'combined_ms={elapsed_ms:.1f}'
-            )
-            return rows, totals_row
+            print(f'economics_period_items_timing account_id={account_id} items_ms={elapsed_ms:.1f}')
 
-    def get_period_totals(
+        totals_row = await self.get_period_totals(
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+            search=search,
+            subjects=subjects,
+            brands=brands,
+            articles=articles,
+            only_negative_profit=only_negative_profit,
+            min_profit=min_profit,
+            max_profit=max_profit,
+        )
+
+        return rows, totals_row
+
+    async def get_period_totals(
         self,
         account_id: UUID,
         date_from: date,
@@ -378,7 +320,7 @@ class EconomicsRepository:
         min_profit: Decimal | None,
         max_profit: Decimal | None,
     ) -> dict:
-        with self._conn.cursor() as cur:
+        async with self._conn.cursor() as cur:
             sql, params = self._build_dashboard_totals_query(
                 account_id=account_id,
                 date_from=date_from,
@@ -392,8 +334,8 @@ class EconomicsRepository:
                 max_profit=max_profit,
             )
             started_at = perf_counter()
-            cur.execute(sql, params)
-            row = cur.fetchone() or {}
+            await cur.execute(sql, params)
+            row = await cur.fetchone() or {}
             elapsed_ms = (perf_counter() - started_at) * 1000
             print(
                 'economics_period_totals_timing '
@@ -402,7 +344,7 @@ class EconomicsRepository:
             )
             return row
 
-    def list_period_sizes(
+    async def list_period_sizes(
         self,
         account_id: UUID,
         date_from: date,
@@ -410,8 +352,8 @@ class EconomicsRepository:
         nm_id: int,
         vendor_code: str,
     ) -> list[dict]:
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 select
                     case when count(distinct source_mode) = 1 then max(source_mode) else 'mixed' end as source_mode,
@@ -489,93 +431,52 @@ class EconomicsRepository:
                     vendor_code,
                 ),
             )
-            return list(cur.fetchall())
+            return list(await cur.fetchall())
 
 
-    def list_filter_options(
+    async def list_filter_options(
         self,
         account_id: UUID,
         date_from: date,
         date_to: date,
     ) -> dict:
-        with self._conn.cursor() as cur:
+        async with self._conn.cursor() as cur:
             started_at = perf_counter()
-            cur.execute(
+            await cur.execute(
                 """
                 with
                 subjects as (
-                    select distinct value, label, hint
-                    from mart.ui_item_day_filters
-                    where account_id = %s
-                      and filter_type = 'subject'
-                      and calendar_date between %s and %s
+                    select distinct value, label, hint from mart.ui_item_day_filters
+                    where account_id = %s and filter_type = 'subject' and calendar_date between %s and %s
                 ),
                 brands as (
-                    select distinct value, label, hint
-                    from mart.ui_item_day_filters
-                    where account_id = %s
-                      and filter_type = 'brand'
-                      and calendar_date between %s and %s
+                    select distinct value, label, hint from mart.ui_item_day_filters
+                    where account_id = %s and filter_type = 'brand' and calendar_date between %s and %s
                 ),
                 articles as (
-                    select distinct value, label, hint
-                    from mart.ui_item_day_filters
-                    where account_id = %s
-                      and filter_type = 'article'
-                      and calendar_date between %s and %s
+                    select distinct value, label, hint from mart.ui_item_day_filters
+                    where account_id = %s and filter_type = 'article' and calendar_date between %s and %s
                 )
                 select
-                    coalesce(
-                        (
-                            select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label)
-                            from subjects
-                        ),
-                        '[]'::json
-                    ) as subjects,
-                    coalesce(
-                        (
-                            select json_agg(json_build_object('value', value, 'label', value, 'hint', null) order by value)
-                            from brands
-                        ),
-                        '[]'::json
-                    ) as brands,
-                    coalesce(
-                        (
-                            select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label)
-                            from articles
-                        ),
-                        '[]'::json
-                    ) as articles
+                    coalesce((select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label) from subjects), '[]'::json) as subjects,
+                    coalesce((select json_agg(json_build_object('value', value, 'label', value, 'hint', null) order by value) from brands), '[]'::json) as brands,
+                    coalesce((select json_agg(json_build_object('value', value, 'label', label, 'hint', hint) order by label) from articles), '[]'::json) as articles
                 """,
-                (
-                    account_id,
-                    date_from,
-                    date_to,
-                    account_id,
-                    date_from,
-                    date_to,
-                    account_id,
-                    date_from,
-                    date_to,
-                ),
+                (account_id, date_from, date_to, account_id, date_from, date_to, account_id, date_from, date_to),
             )
-            row = cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}
+            row = await cur.fetchone() or {'subjects': [], 'brands': [], 'articles': []}
             elapsed_ms = (perf_counter() - started_at) * 1000
-            print(
-                'economics_filter_options_timing '
-                f'account_id={account_id} date_from={date_from} date_to={date_to} '
-                f'elapsed_ms={elapsed_ms:.1f}'
-            )
+            print(f'economics_filter_options_timing account_id={account_id} elapsed_ms={elapsed_ms:.1f}')
             return row
 
-    def get_advert_diagnostics_totals(
+    async def get_advert_diagnostics_totals(
         self,
         account_id: UUID,
         date_from: date,
         date_to: date,
     ) -> dict:
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 with raw_totals as (
                     select coalesce(sum(coalesce(upd_sum, 0)), 0)::numeric as raw_advert_cost
@@ -604,16 +505,16 @@ class EconomicsRepository:
                     date_to,
                 ),
             )
-            return cur.fetchone() or {}
+            return await cur.fetchone() or {}
 
-    def list_advert_diagnostic_campaigns(
+    async def list_advert_diagnostic_campaigns(
         self,
         account_id: UUID,
         date_from: date,
         date_to: date,
     ) -> list[dict]:
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 with raw_by_advert as (
                     select
@@ -692,4 +593,4 @@ class EconomicsRepository:
                     account_id,
                 ),
             )
-            return list(cur.fetchall())
+            return list(await cur.fetchall())

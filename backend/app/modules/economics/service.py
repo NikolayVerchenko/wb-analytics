@@ -1,11 +1,11 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import HTTPException
 import psycopg
 
-from backend.app.modules.accounts.access import AccountAccessRepository
 from backend.app.modules.auth.service import AccessTokenPayload
 from backend.app.modules.economics.repository import EconomicsRepository
 from backend.app.modules.economics.schemas import (
@@ -60,15 +60,20 @@ class EconomicsService:
         'roi_asc': 'roi_percent asc nulls last, vendor_code nulls last, nm_id',
     }
 
-    def __init__(self, conn: psycopg.Connection) -> None:
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._repository = EconomicsRepository(conn)
-        self._account_access = AccountAccessRepository(conn)
 
-    def _ensure_account_access(self, *, principal: AccessTokenPayload, account_id: UUID) -> None:
-        if not self._account_access.principal_has_account_access(principal=principal, account_id=account_id):
+    async def _ensure_account_access(self, *, principal: AccessTokenPayload, account_id: UUID) -> None:
+        started_at = perf_counter()
+        if not await self._repository.user_has_account_access(user_id=principal.user_id, account_id=account_id):
             raise HTTPException(status_code=403, detail='Access to this account is forbidden.')
+        elapsed_ms = (perf_counter() - started_at) * 1000
+        print(
+            'economics_access_check_timing '
+            f'user_id={principal.user_id} account_id={account_id} elapsed_ms={elapsed_ms:.1f}'
+        )
 
-    def list_period_items(
+    async def list_period_items(
         self,
         principal: AccessTokenPayload,
         account_id: UUID,
@@ -85,7 +90,8 @@ class EconomicsService:
         min_profit: Decimal | None,
         max_profit: Decimal | None,
     ) -> EconomicsPeriodItemsResponse:
-        self._ensure_account_access(principal=principal, account_id=account_id)
+        total_started_at = perf_counter()
+        await self._ensure_account_access(principal=principal, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
@@ -101,7 +107,8 @@ class EconomicsService:
             if order_by is None:
                 raise HTTPException(status_code=400, detail='invalid sort')
 
-        rows, totals_row = self._repository.list_period_items(
+        repository_started_at = perf_counter()
+        rows, totals_row = await self._repository.list_period_items(
             account_id,
             date_from,
             date_to,
@@ -116,11 +123,21 @@ class EconomicsService:
             min_profit,
             max_profit,
         )
+        repository_ms = (perf_counter() - repository_started_at) * 1000
+        response_started_at = perf_counter()
         items = [EconomicsPeriodItemRead.model_validate(row) for row in rows]
         totals = EconomicsPeriodTotalsRead.model_validate(totals_row)
-        return EconomicsPeriodItemsResponse(items=items, totals=totals)
+        response = EconomicsPeriodItemsResponse(items=items, totals=totals)
+        response_ms = (perf_counter() - response_started_at) * 1000
+        total_ms = (perf_counter() - total_started_at) * 1000
+        print(
+            'economics_service_timing '
+            f'endpoint=period_items account_id={account_id} rows={len(rows)} '
+            f'repository_ms={repository_ms:.1f} response_ms={response_ms:.1f} total_ms={total_ms:.1f}'
+        )
+        return response
 
-    def list_period_sizes(
+    async def list_period_sizes(
         self,
         principal: AccessTokenPayload,
         account_id: UUID,
@@ -129,33 +146,59 @@ class EconomicsService:
         nm_id: int,
         vendor_code: str,
     ) -> list[EconomicsPeriodSizeRead]:
-        self._ensure_account_access(principal=principal, account_id=account_id)
+        total_started_at = perf_counter()
+        await self._ensure_account_access(principal=principal, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
-        rows = self._repository.list_period_sizes(account_id, date_from, date_to, nm_id, vendor_code)
-        return [EconomicsPeriodSizeRead.model_validate(row) for row in rows]
+        repository_started_at = perf_counter()
+        rows = await self._repository.list_period_sizes(account_id, date_from, date_to, nm_id, vendor_code)
+        repository_ms = (perf_counter() - repository_started_at) * 1000
+        response_started_at = perf_counter()
+        response = [EconomicsPeriodSizeRead.model_validate(row) for row in rows]
+        response_ms = (perf_counter() - response_started_at) * 1000
+        total_ms = (perf_counter() - total_started_at) * 1000
+        print(
+            'economics_service_timing '
+            f'endpoint=period_sizes account_id={account_id} rows={len(rows)} '
+            f'repository_ms={repository_ms:.1f} response_ms={response_ms:.1f} total_ms={total_ms:.1f}'
+        )
+        return response
 
 
-    def list_filter_options(
+    async def list_filter_options(
         self,
         principal: AccessTokenPayload,
         account_id: UUID,
         date_from: date,
         date_to: date,
     ) -> EconomicsFilterOptionsResponse:
-        self._ensure_account_access(principal=principal, account_id=account_id)
+        total_started_at = perf_counter()
+        await self._ensure_account_access(principal=principal, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
-        row = self._repository.list_filter_options(account_id, date_from, date_to)
-        return EconomicsFilterOptionsResponse(
+        repository_started_at = perf_counter()
+        row = await self._repository.list_filter_options(account_id, date_from, date_to)
+        repository_ms = (perf_counter() - repository_started_at) * 1000
+        response_started_at = perf_counter()
+        response = EconomicsFilterOptionsResponse(
             subjects=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('subjects', [])],
             brands=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('brands', [])],
             articles=[EconomicsFilterOptionRead.model_validate(item) for item in row.get('articles', [])],
         )
+        response_ms = (perf_counter() - response_started_at) * 1000
+        total_ms = (perf_counter() - total_started_at) * 1000
+        print(
+            'economics_service_timing '
+            f'endpoint=filter_options account_id={account_id} '
+            f'subjects={len(row.get("subjects", []))} brands={len(row.get("brands", []))} '
+            f'articles={len(row.get("articles", []))} repository_ms={repository_ms:.1f} '
+            f'response_ms={response_ms:.1f} total_ms={total_ms:.1f}'
+        )
+        return response
 
-    def get_dashboard(
+    async def get_dashboard(
         self,
         principal: AccessTokenPayload,
         account_id: UUID,
@@ -166,12 +209,14 @@ class EconomicsService:
         articles: list[str] | None,
         compare_previous: bool,
     ) -> EconomicsDashboardResponse:
-        self._ensure_account_access(principal=principal, account_id=account_id)
+        total_started_at = perf_counter()
+        await self._ensure_account_access(principal=principal, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
+        current_started_at = perf_counter()
         current_totals = EconomicsPeriodTotalsRead.model_validate(
-            self._repository.get_period_totals(
+            await self._repository.get_period_totals(
                 account_id=account_id,
                 date_from=date_from,
                 date_to=date_to,
@@ -184,15 +229,18 @@ class EconomicsService:
                 max_profit=None,
             )
         )
+        current_ms = (perf_counter() - current_started_at) * 1000
 
         previous_date_from: date | None = None
         previous_date_to: date | None = None
         previous_totals: EconomicsPeriodTotalsRead | None = None
+        previous_ms = 0.0
 
         if compare_previous:
             previous_date_from, previous_date_to = self._build_previous_period(date_from, date_to)
+            previous_started_at = perf_counter()
             previous_totals = EconomicsPeriodTotalsRead.model_validate(
-                self._repository.get_period_totals(
+                await self._repository.get_period_totals(
                     account_id=account_id,
                     date_from=previous_date_from,
                     date_to=previous_date_to,
@@ -205,7 +253,9 @@ class EconomicsService:
                     max_profit=None,
                 )
             )
+            previous_ms = (perf_counter() - previous_started_at) * 1000
 
+        response_started_at = perf_counter()
         metrics = [
             self._build_dashboard_metric(
                 key=key,
@@ -216,15 +266,24 @@ class EconomicsService:
             for key, label in self._DASHBOARD_METRICS
         ]
 
-        return EconomicsDashboardResponse(
+        response = EconomicsDashboardResponse(
             date_from=date_from,
             date_to=date_to,
             previous_date_from=previous_date_from,
             previous_date_to=previous_date_to,
             metrics=metrics,
         )
+        response_ms = (perf_counter() - response_started_at) * 1000
+        total_ms = (perf_counter() - total_started_at) * 1000
+        print(
+            'economics_service_timing '
+            f'endpoint=dashboard account_id={account_id} compare_previous={compare_previous} '
+            f'current_ms={current_ms:.1f} previous_ms={previous_ms:.1f} '
+            f'response_ms={response_ms:.1f} total_ms={total_ms:.1f}'
+        )
+        return response
 
-    def get_advert_diagnostics(
+    async def get_advert_diagnostics(
         self,
         *,
         principal: AccessTokenPayload,
@@ -232,24 +291,30 @@ class EconomicsService:
         date_from: date,
         date_to: date,
     ) -> EconomicsAdvertDiagnosticsResponse:
-        self._ensure_account_access(principal=principal, account_id=account_id)
+        total_started_at = perf_counter()
+        await self._ensure_account_access(principal=principal, account_id=account_id)
         if date_from > date_to:
             raise HTTPException(status_code=400, detail='date_from must be less than or equal to date_to')
 
-        totals_row = self._repository.get_advert_diagnostics_totals(
+        totals_started_at = perf_counter()
+        totals_row = await self._repository.get_advert_diagnostics_totals(
             account_id=account_id,
             date_from=date_from,
             date_to=date_to,
         )
+        totals_ms = (perf_counter() - totals_started_at) * 1000
+        campaigns_started_at = perf_counter()
         campaigns = [
             EconomicsAdvertDiagnosticsCampaignRead.model_validate(row)
-            for row in self._repository.list_advert_diagnostic_campaigns(
+            for row in await self._repository.list_advert_diagnostic_campaigns(
                 account_id=account_id,
                 date_from=date_from,
                 date_to=date_to,
             )
         ]
-        return EconomicsAdvertDiagnosticsResponse(
+        campaigns_ms = (perf_counter() - campaigns_started_at) * 1000
+        response_started_at = perf_counter()
+        response = EconomicsAdvertDiagnosticsResponse(
             date_from=date_from,
             date_to=date_to,
             raw_advert_cost=totals_row.get('raw_advert_cost', Decimal('0')),
@@ -257,6 +322,15 @@ class EconomicsService:
             unattributed_advert_cost=totals_row.get('unattributed_advert_cost', Decimal('0')),
             campaigns=campaigns,
         )
+        response_ms = (perf_counter() - response_started_at) * 1000
+        total_ms = (perf_counter() - total_started_at) * 1000
+        print(
+            'economics_service_timing '
+            f'endpoint=advert_diagnostics account_id={account_id} campaigns={len(campaigns)} '
+            f'totals_ms={totals_ms:.1f} campaigns_ms={campaigns_ms:.1f} '
+            f'response_ms={response_ms:.1f} total_ms={total_ms:.1f}'
+        )
+        return response
 
     def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
         sales_quantity = self._sum(items, 'sales_quantity')
