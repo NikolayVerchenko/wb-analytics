@@ -14,10 +14,26 @@ def _normalize_size(value: str) -> str:
 
 
 class StocksRepository:
-    def __init__(self, conn: psycopg.Connection) -> None:
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
 
-    def list_items(
+    async def user_has_account_access(self, user_id: UUID, account_id: UUID) -> bool:
+        async with self._conn.cursor() as cur:
+            await cur.execute(
+                """
+                select exists(
+                    select 1
+                    from core.user_accounts
+                    where user_id = %s
+                      and account_id = %s
+                ) as has_access
+                """,
+                (user_id, account_id),
+            )
+            row = await cur.fetchone()
+            return bool(row['has_access']) if row is not None else False
+
+    async def list_items(
         self,
         account_id: UUID,
         search: str | None,
@@ -25,7 +41,7 @@ class StocksRepository:
         offset: int,
     ) -> tuple[list[dict], dict]:
         search_value = f"%{search.strip()}%" if search and search.strip() else None
-        with self._conn.cursor() as cur:
+        async with self._conn.cursor() as cur:
             sql = """
                 with aggregated as (
                     select
@@ -81,8 +97,8 @@ class StocksRepository:
                     coalesce((select json_agg(row_to_json(p)) from paged p), '[]'::json) as items
             """
             started_at = perf_counter()
-            cur.execute(sql, (account_id, search_value, search_value, limit, offset))
-            result = cur.fetchone() or {}
+            await cur.execute(sql, (account_id, search_value, search_value, limit, offset))
+            result = await cur.fetchone() or {}
             elapsed_ms = (perf_counter() - started_at) * 1000
             rows = result.get('items') or []
             print(
@@ -92,7 +108,7 @@ class StocksRepository:
             )
             return rows, (result.get('totals') or {})
 
-    def list_warehouses(
+    async def list_warehouses(
         self,
         account_id: UUID,
         nm_id: int,
@@ -101,8 +117,8 @@ class StocksRepository:
     ) -> list[dict]:
         normalized_vendor_code = vendor_code.strip().lower()
         normalized_tech_size = _normalize_size(tech_size)
-        with self._conn.cursor() as cur:
-            cur.execute(
+        async with self._conn.cursor() as cur:
+            await cur.execute(
                 """
                 select
                     warehouse_name,
@@ -118,4 +134,4 @@ class StocksRepository:
                 """,
                 (account_id, nm_id, normalized_vendor_code, normalized_tech_size),
             )
-            return list(cur.fetchall())
+            return list(await cur.fetchall())
