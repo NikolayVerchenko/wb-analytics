@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import psycopg
 import psycopg.rows
+from psycopg import AsyncClientCursor, ClientCursor
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 
 from backend.app.settings import get_settings
@@ -19,6 +20,7 @@ def get_db_connection() -> psycopg.Connection:
         user=settings.pg_user,
         password=settings.pg_password,
         row_factory=psycopg.rows.dict_row,
+        cursor_factory=ClientCursor,
         prepare_threshold=None,
     )
 
@@ -39,7 +41,11 @@ def get_sync_db_pool() -> ConnectionPool:
             min_size=settings.pgpool_min_size,
             max_size=settings.pgpool_max_size,
             timeout=settings.pgpool_timeout_seconds,
-            kwargs={'row_factory': psycopg.rows.dict_row, 'prepare_threshold': None},
+            kwargs={
+                'row_factory': psycopg.rows.dict_row,
+                'cursor_factory': ClientCursor,
+                'prepare_threshold': None,
+            },
             open=True,
         )
     return _sync_db_pool
@@ -63,6 +69,7 @@ def get_async_db_pool() -> AsyncConnectionPool:
             timeout=settings.pgpool_timeout_seconds,
             kwargs={
                 'row_factory': psycopg.rows.dict_row,
+                'cursor_factory': AsyncClientCursor,
                 'prepare_threshold': None,
             },
             open=False, # Пул должен открываться асинхронно
