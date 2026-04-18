@@ -1,7 +1,7 @@
 <template>
-  <div class="card stack">
+  <div :class="embedded ? 'stack' : 'card stack'">
     <slot name="header">
-      <h3>Товары</h3>
+      <h3 v-if="!embedded">Товары</h3>
     </slot>
 
     <div class="table-wrapper economics-table-wrapper">
@@ -269,14 +269,19 @@ import { computed } from 'vue'
 import type { EconomicsItem, EconomicsSizeItem, EconomicsTotals } from '../types/economics'
 import { formatNumber, formatPercent } from '../utils/format'
 
-const props = defineProps<{
-  items: EconomicsItem[]
-  totals: EconomicsTotals | null
-  expandedItemKeys: string[]
-  sizesByItem: Record<string, EconomicsSizeItem[]>
-  sizesLoadingByItem: Record<string, boolean>
-  sizesErrorByItem: Record<string, string>
-}>()
+const props = withDefaults(
+  defineProps<{
+    items: EconomicsItem[]
+    totals: EconomicsTotals | null
+    expandedItemKeys: string[]
+    sizesByItem: Record<string, EconomicsSizeItem[]>
+    sizesLoadingByItem: Record<string, boolean>
+    sizesErrorByItem: Record<string, string>
+    /** Родитель уже даёт обёртку `.card.stack`. */
+    embedded?: boolean
+  }>(),
+  { embedded: false },
+)
 
 const emit = defineEmits<{
   'toggle-item': [EconomicsItem]

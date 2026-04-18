@@ -1,7 +1,7 @@
 <template>
-  <div class="card dashboard-panel">
+  <div :class="embedded ? 'dashboard-panel' : 'card dashboard-panel'">
     <slot name="header">
-      <h3 class="section-title">Дашборд</h3>
+      <h3 v-if="!embedded" class="section-title">Дашборд</h3>
     </slot>
 
     <div class="dashboard-group">
@@ -48,6 +48,9 @@
             <span class="kpi-dot" :data-state="card.state"></span>
           </div>
           <strong class="dashboard-value">{{ card.value }}</strong>
+          <span v-if="card.secondaryValue" class="dashboard-secondary-value">
+            {{ card.secondaryLabel || 'Дополнительно' }}: {{ card.secondaryValue }}
+          </span>
           <span v-if="card.hint" class="dashboard-hint">{{ card.hint }}</span>
           <div class="dashboard-meta">
             <span v-if="card.previous">Было: {{ card.previous }}</span>
@@ -66,18 +69,25 @@
 import { computed } from 'vue'
 import type { DashboardMetricView } from '../types/dashboard'
 
-const props = defineProps<{
-  metrics: DashboardMetricView[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    metrics: DashboardMetricView[]
+    /** Родитель уже даёт обёртку `.card.dashboard-panel`. */
+    embedded?: boolean
+  }>(),
+  { embedded: false },
+)
 
 type CardState = 'positive' | 'warning' | 'negative' | 'neutral'
 
 type CardView = DashboardMetricView & {
   state: CardState
   trend: 'up' | 'down' | 'flat'
+  secondaryValue?: string
+  secondaryLabel?: string
 }
 
-const primaryKeys = new Set(['seller_transfer', 'realization_after_spp', 'profit_amount'])
+const primaryKeys = new Set(['realization_before_spp', 'realization_after_spp', 'profit_amount'])
 const secondaryOrder = [
   'sales_quantity',
   'delivery_quantity',
@@ -90,6 +100,8 @@ const secondaryOrder = [
 
 const positiveKeys = new Set([
   'sales_quantity',
+  'order_count',
+  'order_sum',
   'delivery_quantity',
   'buyout_percent',
   'seller_transfer',
@@ -179,6 +191,38 @@ const secondaryCards = computed(() => {
   const rest = props.metrics.filter((metric) => !primaryKeys.has(metric.key))
   const byKey = new Map(rest.map((metric) => [metric.key, metric]))
   const ordered: DashboardMetricView[] = []
+
+  const orderAmountMetric = props.metrics.find((metric) => metric.key === 'order_sum')
+  const orderCountMetric = props.metrics.find((metric) => metric.key === 'order_count')
+  const cards: CardView[] = []
+
+  if (orderAmountMetric || orderCountMetric) {
+    if (orderAmountMetric) {
+      byKey.delete(orderAmountMetric.key)
+    }
+    if (orderCountMetric) {
+      byKey.delete(orderCountMetric.key)
+    }
+    const base = getCardView(
+      orderAmountMetric ?? {
+        key: 'orders_summary',
+        label: 'Заказы',
+        value: orderCountMetric?.value ?? '—',
+        previous: orderCountMetric?.previous,
+        delta: orderCountMetric?.delta,
+        hint: orderCountMetric?.hint,
+      },
+    )
+    cards.push({
+      ...base,
+      key: 'orders_summary',
+      label: 'Заказы',
+      value: orderAmountMetric?.value ?? '—',
+      secondaryValue: orderCountMetric?.value ?? '—',
+      secondaryLabel: 'Количество заказов',
+    })
+  }
+
   for (const key of secondaryOrder) {
     const metric = byKey.get(key)
     if (metric) {
@@ -186,7 +230,7 @@ const secondaryCards = computed(() => {
       byKey.delete(key)
     }
   }
-  return ordered.concat(Array.from(byKey.values())).map(getCardView)
+  return cards.concat(ordered.concat(Array.from(byKey.values())).map(getCardView))
 })
 
 function trendArrow(trend: 'up' | 'down' | 'flat') {
@@ -308,6 +352,12 @@ function statusLabel(state: CardState) {
 
 .dashboard-card-secondary .dashboard-value {
   font-size: 20px;
+}
+
+.dashboard-secondary-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
 }
 
 .dashboard-hint {

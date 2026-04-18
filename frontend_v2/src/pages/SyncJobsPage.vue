@@ -1,9 +1,9 @@
 <template>
-  <section class="stack">
-    <div class="card stack">
-      <div>
-        <h2 class="page-title">Загрузка данных</h2>
-        <p class="page-description">
+  <section class="grid gap-6">
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight text-zinc-900">Загрузка данных</h1>
+        <p class="text-sm text-zinc-600">
           {{ actionDescription }}
         </p>
       </div>
@@ -86,14 +86,27 @@
         Выберите кабинет и запускайте нужный контур отсюда: история, оперативные данные или справочники. Период нужен только для истории.
       </p>
 
-      <div v-if="createError" class="message message-error">{{ createError }}</div>
-      <div v-else-if="createSuccessMessage" class="message message-info">{{ createSuccessMessage }}</div>
-      <div v-if="retryFailedError" class="message message-error">{{ retryFailedError }}</div>
-      <div v-if="cancelError" class="message message-error">{{ cancelError }}</div>
+      <div v-if="createError" class="mt-4">
+        <UiStateBlock title="Ошибка запуска" :description="createError" variant="error" />
+      </div>
+      <div v-else-if="createSuccessMessage" class="mt-4">
+        <UiStateBlock title="Готово" :description="createSuccessMessage" variant="info" />
+      </div>
+      <div v-if="retryFailedError" class="mt-4">
+        <UiStateBlock title="Ошибка повторного запуска" :description="retryFailedError" variant="error" />
+      </div>
+      <div v-if="cancelError" class="mt-4">
+        <UiStateBlock title="Ошибка остановки" :description="cancelError" variant="error" />
+      </div>
     </div>
 
-    <div v-if="coverageLoading" class="message message-info">Обновляю доступность данных по кабинету...</div>
-    <div v-else-if="coverageError" class="message message-error">{{ coverageError }}</div>
+    <UiStateBlock
+      v-if="coverageLoading"
+      title="Обновляю покрытие данных"
+      description="Проверяем доступность данных по выбранному кабинету..."
+      variant="info"
+    />
+    <UiStateBlock v-else-if="coverageError" title="Ошибка загрузки покрытия" :description="coverageError" variant="error" />
 
     <SyncCoverageOverview
       v-if="coverage"
@@ -107,8 +120,8 @@
       @history-gap-fill="handleHistoryGapFill"
     />
 
-    <div v-if="detailsLoading" class="message message-info">Обновляю статус загрузки...</div>
-    <div v-else-if="detailsError" class="message message-error">{{ detailsError }}</div>
+    <UiStateBlock v-if="detailsLoading" title="Обновляю статус" description="Запрашиваем текущее состояние загрузки..." variant="info" />
+    <UiStateBlock v-else-if="detailsError" title="Ошибка загрузки статуса" :description="detailsError" variant="error" />
 
     <details v-if="jobDetails" class="card sync-job-details-panel" :open="jobDetails.job.status === 'pending' || jobDetails.job.status === 'running'">
       <summary class="sync-job-details-summary">
@@ -134,6 +147,7 @@ import { getAccounts } from '../api/accounts'
 import PeriodFilter from '../components/PeriodFilter.vue'
 import SyncCoverageOverview from '../components/SyncCoverageOverview.vue'
 import SyncJobProgress from '../components/SyncJobProgress.vue'
+import UiStateBlock from '../components/UiStateBlock.vue'
 import type { SyncDataset, SyncJobStatus } from '../types/sync'
 import { useSyncJob } from '../composables/useSyncJob'
 import type { Account } from '../types/account'

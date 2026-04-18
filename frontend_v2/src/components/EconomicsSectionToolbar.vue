@@ -2,7 +2,6 @@
   <div class="section-toolbar">
     <div class="section-toolbar-title">
       <h3 class="section-title">{{ title }}</h3>
-      <span v-if="accountId" class="section-meta">Кабинет: {{ accountId }}</span>
     </div>
 
     <div class="section-toolbar-actions section-toolbar-actions-compact">

@@ -16,13 +16,17 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/accounts',
+      redirect: '/settings',
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: AccountsPage,
+      meta: { requiresAuth: true },
     },
     {
       path: '/accounts',
-      name: 'accounts',
-      component: AccountsPage,
-      meta: { requiresAuth: true },
+      redirect: '/settings',
     },
     {
       path: '/connect-account',
@@ -85,7 +89,7 @@ router.beforeEach(async (to) => {
   await bootstrapAuth()
 
   if (to.meta.guestOnly && isAuthenticated.value) {
-    return { name: 'accounts' }
+    return { name: 'settings' }
   }
 
   if (to.meta.requiresAuth && !isAuthenticated.value) {

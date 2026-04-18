@@ -3,6 +3,7 @@ export type EconomicsItem = {
   vendor_code: string | null
   nm_id: number | null
   order_count?: number | null
+  order_sum?: number | null
   delivery_quantity?: number | null
   refusal_quantity?: number | null
   return_quantity?: number | null
@@ -59,6 +60,7 @@ export type EconomicsSizeItem = {
 
 export type EconomicsTotals = {
   order_count?: number | null
+  order_sum?: number | null
   delivery_quantity?: number | null
   refusal_quantity?: number | null
   return_quantity?: number | null

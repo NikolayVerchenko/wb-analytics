@@ -1,6 +1,10 @@
 <template>
   <template v-if="isAuthenticated">
-    <AppLayout>
+    <AppLayout
+      :user-name="currentUserName"
+      :user-email="currentUserEmail"
+      :selected-account-id="selectedAccountId"
+    >
       <template #topbar-actions>
         <Select v-model="selectedAccountIdProxy">
           <SelectTrigger class="h-9 w-[240px] bg-white">
@@ -57,6 +61,26 @@ const selectedAccountIdProxy = computed({
 })
 const currentUserName = computed(() => authState.user?.name || null)
 const currentUserEmail = computed(() => authState.user?.email || null)
+const pagesUsingAccountQuery = new Set(['economics', 'economics-problems', 'stocks', 'supplies', 'sync'])
+
+async function syncAccountToRouteQuery(accountId: string | null) {
+  if (!route.name || !pagesUsingAccountQuery.has(String(route.name))) {
+    return
+  }
+
+  const currentAccountInQuery = typeof route.query.account_id === 'string' ? route.query.account_id : null
+  if (currentAccountInQuery === accountId) {
+    return
+  }
+
+  await router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      account_id: accountId || undefined,
+    },
+  })
+}
 
 async function loadAccounts() {
   if (!isAuthenticated.value) {
@@ -71,9 +95,11 @@ async function loadAccounts() {
     if (resolvedAccountId) {
       await scopeAccount(resolvedAccountId)
     }
+    await syncAccountToRouteQuery(resolvedAccountId)
   } catch {
     accounts.value = []
     setSelectedAccountId(null)
+    await syncAccountToRouteQuery(null)
   }
 }
 
@@ -91,16 +117,7 @@ async function handleSelectAccount(accountId: string | null) {
     await scopeAccount(accountId)
   }
 
-  const pagesUsingAccountQuery = new Set(['economics', 'economics-problems', 'stocks', 'supplies', 'sync'])
-  if (route.name && pagesUsingAccountQuery.has(String(route.name))) {
-    await router.replace({
-      path: route.path,
-      query: {
-        ...route.query,
-        account_id: accountId || undefined,
-      },
-    })
-  }
+  await syncAccountToRouteQuery(accountId)
 }
 
 onMounted(loadAccounts)

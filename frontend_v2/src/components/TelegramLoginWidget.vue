@@ -105,7 +105,7 @@ function applyStatusFromUrl() {
   if (authStatus === 'success') {
     status.value = 'success'
     errorMessage.value = ''
-    scheduleRedirect('/accounts')
+    scheduleRedirect('/settings')
   } else {
     status.value = 'error'
     errorMessage.value = url.searchParams.get('message') || 'Не удалось выполнить вход.'

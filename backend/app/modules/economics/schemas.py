@@ -19,6 +19,7 @@ class EconomicsPeriodItemRead(BaseModel):
     account_name: str | None
     photo_url: str | None
     order_count: int | None
+    order_sum: Decimal | None
     sales_quantity: int | None
     return_quantity: int | None
     retail_price_sale: Decimal | None
@@ -100,6 +101,8 @@ class EconomicsPeriodSizeRead(BaseModel):
 class EconomicsPeriodTotalsRead(BaseModel):
     sales_quantity: Decimal | None
     order_count: Decimal | None
+    order_sum: Decimal | None
+    retail_amount_sale: Decimal | None
     delivery_quantity: Decimal | None
     refusal_quantity: Decimal | None
     return_quantity: Decimal | None

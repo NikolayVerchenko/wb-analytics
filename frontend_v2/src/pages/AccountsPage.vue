@@ -2,9 +2,9 @@
   <section class="accounts-page stack">
     <div class="card accounts-hero">
       <div class="accounts-hero-copy">
-        <h1 class="page-title accounts-title">Кабинеты</h1>
+        <h1 class="page-title accounts-title">Настройки</h1>
         <p class="page-description accounts-description">
-          Выберите активный кабинет. После выбора все разделы в верхнем меню будут открываться уже для него.
+          Управление кабинетом и налоговой ставкой для расчета полной аналитики.
         </p>
       </div>
 
@@ -12,6 +12,23 @@
         Подключить кабинет
       </button>
     </div>
+
+    <UiStateBlock
+      v-if="!selectedAccountId"
+      title="Активный кабинет не выбран"
+      description="Выберите кабинет ниже, чтобы редактировать налоговую ставку."
+      variant="empty"
+    />
+    <TaxSettingsCard
+      v-else
+      v-model:tax-rate="taxRatePercent"
+      v-model:effective-from="taxEffectiveFrom"
+      :loading="taxLoading"
+      :saving="taxSaving"
+      :error="taxError"
+      :message="taxMessage"
+      @save-tax-settings="saveTaxSettings"
+    />
 
     <div v-if="loading" class="message message-info">Загрузка кабинетов...</div>
     <div v-else-if="error" class="message message-error">{{ error }}</div>
@@ -66,9 +83,16 @@
             type="button"
             class="account-select-button"
             :class="{ 'account-select-button-active': selectedAccountId === account.account_id }"
+            :disabled="selectingAccountId === account.account_id"
             @click="selectAccount(account.account_id)"
           >
-            {{ selectedAccountId === account.account_id ? 'Выбран' : 'Выбрать кабинет' }}
+            {{
+              selectingAccountId === account.account_id
+                ? 'Применяю...'
+                : selectedAccountId === account.account_id
+                  ? 'Выбран'
+                  : 'Сделать активным'
+            }}
           </button>
         </div>
       </article>
@@ -80,7 +104,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAccounts } from '../api/accounts'
+import { scopeAccount } from '../auth/store'
 import { selectedAccount, setSelectedAccountId } from '../auth/selected-account'
+import TaxSettingsCard from '../components/TaxSettingsCard.vue'
+import UiStateBlock from '../components/UiStateBlock.vue'
+import { useTaxSettings } from '../composables/useTaxSettings'
 import type { Account } from '../types/account'
 
 const router = useRouter()
@@ -89,6 +117,19 @@ const accounts = ref<Account[]>([])
 const loading = ref(false)
 const error = ref('')
 const selectedAccountId = computed(() => selectedAccount.value)
+const selectingAccountId = ref('')
+
+const {
+  loading: taxLoading,
+  saving: taxSaving,
+  error: taxError,
+  message: taxMessage,
+  taxRatePercent,
+  effectiveFrom: taxEffectiveFrom,
+  save: saveTaxSettings,
+} = useTaxSettings({
+  accountId: () => selectedAccountId.value || '',
+})
 
 function getAccountTitle(account: Account): string {
   return account.seller_name || account.name || 'Без названия'
@@ -98,8 +139,16 @@ function openConnectAccount() {
   router.push({ name: 'connect-account' })
 }
 
-function selectAccount(accountId: string) {
+async function selectAccount(accountId: string) {
+  selectingAccountId.value = accountId
   setSelectedAccountId(accountId)
+  try {
+    await scopeAccount(accountId)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Не удалось сделать кабинет активным.'
+  } finally {
+    selectingAccountId.value = ''
+  }
 }
 
 async function loadAccounts() {

@@ -25,6 +25,8 @@ from backend.app.modules.economics.schemas import (
 class EconomicsService:
     _DASHBOARD_METRICS: tuple[tuple[str, str], ...] = (
         ('sales_quantity', 'Продажи'),
+        ('order_count', 'Количество заказов'),
+        ('order_sum', 'Сумма заказов'),
         ('delivery_quantity', 'Количество доставок'),
         ('refusal_quantity', 'Количество отказов'),
         ('buyout_percent', '% выкупа'),
@@ -334,8 +336,12 @@ class EconomicsService:
 
     def _build_totals(self, items: list[EconomicsPeriodItemRead]) -> EconomicsPeriodTotalsRead:
         sales_quantity = self._sum(items, 'sales_quantity')
+        order_count = self._sum(items, 'order_count')
+        order_sum = self._sum(items, 'order_sum')
+        retail_amount_sale = self._sum(items, 'retail_amount_sale')
         delivery_quantity = self._sum(items, 'delivery_quantity')
         refusal_quantity = self._sum(items, 'refusal_quantity')
+        return_quantity = self._sum(items, 'return_quantity')
         realization_before_spp = self._sum(items, 'realization_before_spp')
         realization_after_spp = self._sum(items, 'realization_after_spp')
         spp_amount = self._sum(items, 'spp_amount')
@@ -354,8 +360,12 @@ class EconomicsService:
 
         return EconomicsPeriodTotalsRead(
             sales_quantity=sales_quantity,
+            order_count=order_count,
+            order_sum=order_sum,
+            retail_amount_sale=retail_amount_sale,
             delivery_quantity=delivery_quantity,
             refusal_quantity=refusal_quantity,
+            return_quantity=return_quantity,
             buyout_percent=self._percent(sales_quantity, delivery_quantity),
             realization_before_spp=realization_before_spp,
             realization_after_spp=realization_after_spp,

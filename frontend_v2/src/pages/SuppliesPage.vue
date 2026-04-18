@@ -1,33 +1,34 @@
 <template>
-  <section class="stack supplies-page">
-    <div class="card stack">
-      <div class="section-toolbar">
-        <div class="section-toolbar-title">
-          <h2 class="page-title">Поставки</h2>
-          <p class="page-description">
+  <section class="grid gap-6 supplies-page">
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-4">
+        <div class="grid gap-2">
+          <h1 class="text-2xl font-semibold tracking-tight text-zinc-900">Поставки</h1>
+          <p class="text-sm text-zinc-600">
             Управление списком поставок и себестоимостью товаров. Значения `unit_cogs` из этой страницы участвуют в расчёте экономики.
           </p>
         </div>
-        <div v-if="hasAccount" class="section-toolbar-actions">
-          <span class="account-pill">Кабинет подключён</span>
-          <span class="account-pill account-pill-muted">{{ shortAccountId }}</span>
+        <div v-if="hasAccount" class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Кабинет подключён</span>
+          <span class="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600">{{ shortAccountId }}</span>
         </div>
       </div>
 
-      <div v-if="hasAccount" class="filters">
-        <div class="field supplies-search-field">
-          <label for="supplies-search">Поиск поставки</label>
+      <div v-if="hasAccount" class="mt-6 grid gap-4 md:grid-cols-2">
+        <div class="grid gap-1.5 supplies-search-field">
+          <label for="supplies-search" class="text-sm font-medium text-zinc-700">Поиск поставки</label>
           <input
             id="supplies-search"
             v-model="searchQuery"
             type="text"
             placeholder="Номер поставки или предзаказа"
+            class="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-900"
           />
         </div>
 
-        <div class="field">
-          <label for="supplies-status-filter">Статус</label>
-          <select id="supplies-status-filter" v-model="statusFilter" class="field-select">
+        <div class="grid gap-1.5">
+          <label for="supplies-status-filter" class="text-sm font-medium text-zinc-700">Статус</label>
+          <select id="supplies-status-filter" v-model="statusFilter" class="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-900">
             <option value="all">Все статусы</option>
             <option value="accepted">Принято</option>
             <option value="partial">Частично принято</option>
@@ -37,14 +38,22 @@
       </div>
     </div>
 
-    <div v-if="!hasAccount" class="message message-empty">
-      Выберите кабинет, чтобы открыть поставки.
-    </div>
+    <UiStateBlock
+      v-if="!hasAccount"
+      title="Кабинет не выбран"
+      description="Выберите кабинет в верхнем меню, чтобы открыть поставки."
+      variant="empty"
+    />
 
     <template v-else>
-      <div v-if="loading" class="message message-info">Загрузка поставок...</div>
-      <div v-else-if="error" class="message message-error">{{ error }}</div>
-      <div v-else-if="empty" class="message message-empty">Для выбранного кабинета поставки не найдены.</div>
+      <UiStateBlock v-if="loading" title="Загрузка поставок" description="Подготавливаем список поставок..." variant="info" />
+      <UiStateBlock v-else-if="error" title="Ошибка загрузки" :description="error" variant="error" />
+      <UiStateBlock
+        v-else-if="empty"
+        title="Данные не найдены"
+        description="Для выбранного кабинета поставки не найдены."
+        variant="empty"
+      />
       <template v-else>
         <div class="totals supplies-summary-grid">
           <article v-for="metric in summaryMetrics" :key="metric.key" class="totals-item">
@@ -79,6 +88,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import SuppliesTable from '../components/SuppliesTable.vue'
+import UiStateBlock from '../components/UiStateBlock.vue'
 import { useSuppliesPage } from '../composables/useSuppliesPage'
 
 const {

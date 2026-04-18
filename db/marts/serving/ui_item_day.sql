@@ -13,6 +13,7 @@ create table if not exists mart.ui_item_day (
     account_name text,
     photo_url text,
     order_count bigint,
+    order_sum numeric,
     sales_quantity bigint,
     return_quantity bigint,
     retail_price_sale numeric,
@@ -51,7 +52,8 @@ alter table mart.ui_item_day
     add column if not exists delivery_cost_correction numeric;
 
 alter table mart.ui_item_day
-    add column if not exists order_count bigint;
+    add column if not exists order_count bigint,
+    add column if not exists order_sum numeric;
 
 create unique index if not exists ui_item_day_pk
     on mart.ui_item_day (account_id, calendar_date, nm_id, vendor_code);
@@ -83,6 +85,7 @@ insert into mart.ui_item_day (
     account_name,
     photo_url,
     order_count,
+    order_sum,
     sales_quantity,
     return_quantity,
     retail_price_sale,
@@ -239,7 +242,8 @@ funnel_orders as (
         btrim(lower(coalesce(vendor_code, ''))) as vendor_code,
         max(brand_name) as brand_name,
         max(subject_name) as subject_name,
-        sum(coalesce(order_count, 0))::bigint as order_count
+        sum(coalesce(order_count, 0))::bigint as order_count,
+        sum(coalesce(order_sum, 0))::numeric as order_sum
     from core.product_funnel
     where period_from = period_to
     group by account_id, period_from, nm_id, btrim(lower(coalesce(vendor_code, '')))
@@ -264,6 +268,7 @@ select
     coalesce(sr.account_name, ix.account_name) as account_name,
     coalesce(sr.photo_url, ix.photo_url) as photo_url,
     coalesce(fo.order_count, 0)::bigint as order_count,
+    coalesce(fo.order_sum, 0)::numeric as order_sum,
     coalesce(sr.sales_quantity, 0)::bigint as sales_quantity,
     coalesce(sr.return_quantity, 0)::bigint as return_quantity,
     coalesce(sr.retail_price_sale, 0)::numeric as retail_price_sale,
@@ -319,6 +324,7 @@ left join funnel_orders fo
  and fo.vendor_code = bk.vendor_code
 where not (
     coalesce(fo.order_count, 0) = 0
+    and coalesce(fo.order_sum, 0) = 0
     and coalesce(sr.sales_quantity, 0) = 0
     and coalesce(sr.return_quantity, 0) = 0
     and coalesce(sr.retail_price_sale, 0) = 0

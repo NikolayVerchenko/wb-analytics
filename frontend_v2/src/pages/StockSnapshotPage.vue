@@ -1,42 +1,55 @@
 <template>
-  <section class="stack">
-    <div class="card stack">
-      <div>
-        <h2 class="page-title">Остатки товаров</h2>
-        <p class="page-description">
-          Страница читает `account_id` из query params и показывает текущий snapshot остатков,
-          в пути до клиента и возвратов в пути.
+  <section class="grid gap-6">
+    <header class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight text-zinc-900">Остатки товаров</h1>
+        <p class="text-sm text-zinc-600">
+          Снимок текущих остатков, товаров в пути до клиента и возвратов в пути.
         </p>
       </div>
-
-      <div class="filters">
-        <div class="field">
-          <label for="stock-account-id">Account ID</label>
-          <input id="stock-account-id" :value="accountId || ''" type="text" disabled />
-        </div>
+      <div class="mt-4">
+        <span
+          v-if="accountId"
+          class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+        >
+          Кабинет: {{ accountId }}
+        </span>
+        <span
+          v-else
+          class="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600"
+        >
+          Кабинет не выбран
+        </span>
       </div>
-    </div>
+    </header>
 
-    <div v-if="!accountId" class="message message-empty">
-      Выберите кабинет на странице кабинетов, чтобы открыть остатки.
-    </div>
+    <UiStateBlock
+      v-if="!accountId"
+      title="Кабинет не выбран"
+      description="Выберите кабинет в верхнем меню, чтобы открыть страницу остатков."
+      variant="empty"
+    />
 
     <template v-else>
       <template v-if="loading">
-        <div class="message message-info">Загрузка остатков...</div>
+        <UiStateBlock title="Загрузка остатков" description="Подготавливаем данные склада..." variant="info" />
       </template>
       <template v-else-if="error">
-        <div class="message message-error">{{ error }}</div>
+        <UiStateBlock title="Ошибка загрузки" :description="error" variant="error" />
       </template>
       <template v-else-if="empty">
-        <div class="message message-empty">Для остатков нет данных по выбранному кабинету.</div>
+        <UiStateBlock
+          title="Нет данных за выбранный период"
+          description="Для выбранного кабинета пока нет данных по остаткам."
+          variant="empty"
+        />
       </template>
       <template v-else>
         <EconomicsDashboard :metrics="dashboardMetrics">
           <template #header>
-            <div class="section-header">
-              <h3>Сводка по остаткам</h3>
-              <p v-if="lastUpdatedLabel" class="section-meta">Последнее обновление: {{ lastUpdatedLabel }}</p>
+            <div class="grid gap-1">
+              <h3 class="text-lg font-semibold text-zinc-900">Сводка по остаткам</h3>
+              <p v-if="lastUpdatedLabel" class="text-sm text-zinc-500">Последнее обновление: {{ lastUpdatedLabel }}</p>
             </div>
           </template>
         </EconomicsDashboard>
@@ -58,6 +71,7 @@
 <script setup lang="ts">
 import EconomicsDashboard from '../components/EconomicsDashboard.vue'
 import StockTable from '../components/StockTable.vue'
+import UiStateBlock from '../components/UiStateBlock.vue'
 import { useStocksPage } from '../composables/useStocksPage'
 import { useStockWarehouses } from '../composables/useStockWarehouses'
 

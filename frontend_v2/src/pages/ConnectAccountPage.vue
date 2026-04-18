@@ -99,7 +99,7 @@ async function submit() {
 
     status.value = 'success'
     window.setTimeout(() => {
-      router.push({ name: 'accounts' })
+      router.push({ name: 'settings' })
     }, 700)
   } catch (error) {
     status.value = 'error'

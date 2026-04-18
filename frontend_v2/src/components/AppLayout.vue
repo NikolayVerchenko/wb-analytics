@@ -1,25 +1,66 @@
 <script setup lang="ts">
 import {
-  LayoutDashboard,
   LineChart,
   Package,
   Truck,
   RefreshCcw,
+  Settings,
   Bell,
   Search,
-  User,
 } from 'lucide-vue-next'
+import type { RouteLocationRaw } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
+const props = withDefaults(
+  defineProps<{
+    userName?: string | null
+    userEmail?: string | null
+    selectedAccountId?: string | null
+  }>(),
+  {
+    userName: null,
+    userEmail: null,
+    selectedAccountId: null,
+  },
+)
+
 const navItems = [
-  { name: 'Дашборд', icon: LayoutDashboard, href: '/' },
+  { name: 'Настройки', icon: Settings, href: '/settings' },
   { name: 'Экономика', icon: LineChart, href: '/economics' },
   { name: 'Остатки', icon: Package, href: '/stocks' },
   { name: 'Поставки', icon: Truck, href: '/supplies' },
   { name: 'Синхронизация', icon: RefreshCcw, href: '/sync' },
 ]
+
+function navTarget(href: string): RouteLocationRaw {
+  if (!['/economics', '/stocks', '/supplies', '/sync'].includes(href)) {
+    return href
+  }
+
+  return {
+    path: href,
+    query: {
+      account_id: props.selectedAccountId || undefined,
+    },
+  }
+}
+
+function getInitials(name: string | null): string {
+  if (!name) {
+    return 'UN'
+  }
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+  if (parts.length === 0) {
+    return 'UN'
+  }
+  return parts.map((part) => part[0]?.toUpperCase() ?? '').join('')
+}
 </script>
 
 <template>
@@ -36,7 +77,7 @@ const navItems = [
         <router-link
           v-for="item in navItems"
           :key="item.name"
-          :to="item.href"
+          :to="navTarget(item.href)"
           active-class="bg-zinc-100 !text-zinc-900"
           class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900"
         >
@@ -49,12 +90,12 @@ const navItems = [
       <div class="border-t p-4">
         <div class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-50 cursor-pointer transition-colors">
           <Avatar class="h-9 w-9">
-            <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-            <AvatarFallback>UN</AvatarFallback>
+            <AvatarImage src="https://github.com/shadcn.png" alt="user avatar" />
+            <AvatarFallback>{{ getInitials(userName) }}</AvatarFallback>
           </Avatar>
           <div class="flex flex-col">
-            <span class="text-sm font-medium text-zinc-900">Пользователь</span>
-            <span class="text-xs text-zinc-500">user@example.com</span>
+            <span class="text-sm font-medium text-zinc-900">{{ userName || 'Пользователь' }}</span>
+            <span class="text-xs text-zinc-500">{{ userEmail || '—' }}</span>
           </div>
         </div>
       </div>

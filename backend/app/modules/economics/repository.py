@@ -55,6 +55,7 @@ class EconomicsRepository:
                     max(account_name) as account_name,
                     max(photo_url) as photo_url,
                     sum(coalesce(order_count, 0))::bigint as order_count,
+                    sum(coalesce(order_sum, 0))::numeric as order_sum,
                     sum(coalesce(sales_quantity, 0))::bigint as sales_quantity,
                     sum(coalesce(return_quantity, 0))::bigint as return_quantity,
                     sum(coalesce(retail_price_sale, 0))::numeric as retail_price_sale,
@@ -171,7 +172,9 @@ class EconomicsRepository:
             totals as (
                 select
                     coalesce(sum(coalesce(order_count, 0)), 0)::numeric as order_count,
+                    coalesce(sum(coalesce(order_sum, 0)), 0)::numeric as order_sum,
                     coalesce(sum(coalesce(sales_quantity, 0)), 0)::numeric as sales_quantity,
+                    coalesce(sum(coalesce(retail_amount_sale, 0)), 0)::numeric as retail_amount_sale,
                     coalesce(sum(coalesce(delivery_quantity, 0)), 0)::numeric as delivery_quantity,
                     coalesce(sum(coalesce(refusal_quantity, 0)), 0)::numeric as refusal_quantity,
                     coalesce(sum(coalesce(return_quantity, 0)), 0)::numeric as return_quantity,
@@ -194,7 +197,9 @@ class EconomicsRepository:
             )
             select
                 order_count,
+                order_sum,
                 sales_quantity,
+                retail_amount_sale,
                 delivery_quantity,
                 refusal_quantity,
                 return_quantity,

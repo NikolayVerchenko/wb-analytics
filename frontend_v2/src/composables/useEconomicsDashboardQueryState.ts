@@ -3,10 +3,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { EconomicsFiltersValue } from '../types/filters'
 import { buildPrefixedEconomicsQuery, parsePrefixedEconomicsQuery } from '../utils/economicsQuery'
 
-function hasDashboardQueryNamespace(query: Record<string, unknown>) {
-  return Object.keys(query).some((key) => key.startsWith('dashboard_'))
-}
-
 export function useEconomicsDashboardQueryState() {
   const route = useRoute()
   const router = useRouter()
@@ -24,16 +20,11 @@ export function useEconomicsDashboardQueryState() {
 
   const accountId = ref(typeof route.query.account_id === 'string' ? route.query.account_id : '')
 
-  function syncStateFromQuery(tableFallback?: { date_from: string; date_to: string; filters: EconomicsFiltersValue }) {
+  function syncStateFromQuery() {
     accountId.value = typeof route.query.account_id === 'string' ? route.query.account_id : ''
 
     const query = route.query as Record<string, unknown>
-    const parsed = parsePrefixedEconomicsQuery(
-      query,
-      'dashboard',
-      new Date(),
-      hasDashboardQueryNamespace(query) ? undefined : tableFallback,
-    )
+    const parsed = parsePrefixedEconomicsQuery(query, 'dashboard', new Date())
 
     form.value.date_from = parsed.date_from
     form.value.date_to = parsed.date_to
