@@ -4,6 +4,7 @@ from uuid import UUID
 
 import psycopg
 from dotenv import load_dotenv
+from psycopg import ClientCursor
 
 
 def parse_iso_date(value: str) -> date:
@@ -25,6 +26,8 @@ def db_connection() -> psycopg.Connection:
         dbname=os.getenv("PGDATABASE"),
         user=os.getenv("PGUSER"),
         password=os.getenv("PGPASSWORD"),
+        cursor_factory=ClientCursor,
+        prepare_threshold=None,
     )
 
 
