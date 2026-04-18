@@ -4,6 +4,7 @@ import argparse
 from uuid import UUID
 
 import psycopg
+from psycopg import ClientCursor
 
 from backend.app.modules.auth.service import PasswordHasher
 from backend.app.settings import get_settings
@@ -75,6 +76,8 @@ def main() -> None:
         user=settings.pg_user,
         password=settings.pg_password,
         row_factory=psycopg.rows.dict_row,
+        cursor_factory=ClientCursor,
+        prepare_threshold=None,
     )
 
     password_hasher = PasswordHasher()
